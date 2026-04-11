@@ -366,6 +366,11 @@ class ModelRegistry:
             cls._instance = cls()
         return cls._instance
 
+    @staticmethod
+    def _is_truthy_env(var_name: str, default: str = "true") -> bool:
+        value = os.getenv(var_name, default).strip().lower()
+        return value in {"1", "true", "yes", "y", "on"}
+
     def _load_model(self) -> MultiStockLSTM:
         net = MultiStockLSTM(
             n_stocks    = len(STOCKS),
@@ -385,7 +390,23 @@ class ModelRegistry:
                 net.load_state_dict(state, strict=False)
                 log.info("✓ Model loaded from %s on %s", MODEL_PATH, DEVICE)
             except Exception as exc:
-                log.warning("Could not load weights (%s). Running with random weights.", exc)
+                # PyTorch 2.6 defaults to weights_only=True. Older checkpoints can include
+                # trusted Python objects (e.g., sklearn scalers) and require weights_only=False.
+                if self._is_truthy_env("TRUSTED_MODEL_CHECKPOINT", "true"):
+                    try:
+                        state = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
+                        if isinstance(state, dict):
+                            state = state.get("model_state_dict", state.get("state_dict", state))
+                        net.load_state_dict(state, strict=False)
+                        log.info("✓ Model loaded from trusted checkpoint %s on %s", MODEL_PATH, DEVICE)
+                    except Exception as retry_exc:
+                        log.warning("Could not load weights (%s). Running with random weights.", retry_exc)
+                else:
+                    log.warning(
+                        "Could not load weights with weights_only=True (%s). "
+                        "Set TRUSTED_MODEL_CHECKPOINT=true to allow trusted full checkpoint loading.",
+                        exc,
+                    )
         else:
             log.warning("Model file %s not found. Running with random weights.", MODEL_PATH)
 
@@ -670,10 +691,15 @@ async def startup_event():
     log.info("Warming up model registry…")
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, ModelRegistry.get)
-    log.info("PRISM backend ready on port 5050")
+    log.info("PRISM backend ready on port %s", os.getenv("PORT", "8000"))
 
 
 # ── Routes ────────────────────────────────────────────────────
+
+@app.get("/", tags=["ops"])
+def root():
+    """Root route for platform probes."""
+    return {"service": "PRISM Stock Intelligence API", "status": "ok"}
 
 @app.get("/health", tags=["ops"])
 def health():
