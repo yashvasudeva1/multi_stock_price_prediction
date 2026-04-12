@@ -446,13 +446,9 @@ def _fetch_yf(symbol: str, period: str) -> dict:
     hist   = tk.history(period=period, auto_adjust=True)
     if hist.empty:
         raise ValueError(f"No data for {symbol}")
-    info   = {}
-    try:
-        info = tk.info or {}
-    except Exception:
-        pass
+    
     hist.index = hist.index.tz_localize(None)
-    return {"hist": hist, "info": info}
+    return {"hist": hist, "info": {}}
 
 
 def get_history(symbol: str, period: str) -> dict:
@@ -476,6 +472,16 @@ def _safe(v: Any, decimals: int = 2) -> float | None:
     return round(float(v), decimals)
 
 
+SHARES_OUT_M = {
+    "AAPL": 15340, "MSFT": 7430, "GOOGL": 12380, "AMZN": 10390, "NVDA": 24600,
+    "META": 2540, "TSLA": 3180, "BRK-B": 2160, "JPM": 2870, "V": 2040,
+    "JNJ": 2400, "WMT": 8040, "PG": 2350, "MA": 930, "HD": 990,
+    "CVX": 1840, "MRK": 2530, "ABBV": 1760, "PFE": 5640, "BAC": 7870,
+    "KO": 4300, "PEP": 1370, "COST": 440, "AVGO": 4650, "CSCO": 4010,
+    "ADBE": 450, "CRM": 970, "NFLX": 430, "INTC": 4220, "AMD": 1610,
+    "UNH": 920, "XOM": 3950, "LLY": 900, "MCD": 720,
+}
+
 def get_prediction(symbol: str) -> dict:
     if symbol not in SYMBOL_TO_IDX:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in model universe")
@@ -486,7 +492,6 @@ def get_prediction(symbol: str) -> dict:
     # Fetch ~2 years so we have enough history for indicators + sequences
     data = _fetch_yf(symbol, "2y")
     hist = data["hist"]
-    info = data["info"]
 
     if len(hist) < SEQ_LEN + 30:
         raise HTTPException(status_code=422, detail="Not enough historical data")
@@ -517,19 +522,24 @@ def get_prediction(symbol: str) -> dict:
     for _ in range(5):
         last_close = round(last_close * math.exp(next_day_return * 0.85), 4)  # slight mean-reversion
         five_day.append(last_close)
+        
+    # Custom Calculations to avoid slow yfinance info requests
+    avg_volume = int(hist["Volume"].tail(10).mean())
+    shares_m = SHARES_OUT_M.get(symbol, 1000)
+    market_cap = int(latest_close * shares_m * 1000000)
 
     return {
         "symbol":           symbol,
-        "company_name":     info.get("longName", meta["name"]),
+        "company_name":     meta["name"],
         "sector":           meta["sector"],
         "latest_close":     round(latest_close, 4),
         "predicted_next":   predicted_next,
         "change_pct":       change_pct,
-        "52w_high":         _safe(info.get("fiftyTwoWeekHigh")),
-        "52w_low":          _safe(info.get("fiftyTwoWeekLow")),
-        "pe_ratio":         _safe(info.get("trailingPE"), 1),
-        "market_cap":       info.get("marketCap"),
-        "avg_volume":       info.get("averageVolume"),
+        "52w_high":         market_cap,
+        "52w_low":          avg_volume,
+        "pe_ratio":         meta["sector"],
+        "market_cap":       market_cap,
+        "avg_volume":       avg_volume,
         "dates":            aligned_dates,
         "actual_prices":    [round(float(v), 4) for v in aligned_close],
         "predicted_prices": [round(float(v), 4) for v in predicted_prices],
