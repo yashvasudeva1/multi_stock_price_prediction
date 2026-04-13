@@ -1,0 +1,12 @@
+name: Wake Up Render
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:    
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render App
+        run: curl https://multi-stock-price-prediction.onrender.com
