@@ -1030,11 +1030,8 @@ def _fetch_yf(symbol: str, period: str) -> dict:
     hist   = tk.history(period=period, auto_adjust=True)
     if hist.empty:
         raise ValueError(f"No data for {symbol}")
-<<<<<<< HEAD
 
-=======
     
->>>>>>> 940998e887764d29c8cf1e85169a8dc9c8182bb2
     hist.index = hist.index.tz_localize(None)
     return {"hist": hist, "info": {}}
 
@@ -1060,12 +1057,10 @@ def _safe(v: Any, decimals: int = 2) -> float | None:
     return round(float(v), decimals)
 
 
-<<<<<<< HEAD
 def get_prediction(symbol: str, market: str) -> dict:
     sym2idx  = _sym2idx(market)
     sym2meta = _sym2meta(market)
     shares   = _shares(market)
-=======
 SHARES_OUT_M = {
     "AAPL": 15340, "MSFT": 7430, "GOOGL": 12380, "AMZN": 10390, "NVDA": 24600,
     "META": 2540, "TSLA": 3180, "BRK-B": 2160, "JPM": 2870, "V": 2040,
@@ -1079,7 +1074,6 @@ SHARES_OUT_M = {
 def get_prediction(symbol: str) -> dict:
     if symbol not in SYMBOL_TO_IDX:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in model universe")
->>>>>>> 940998e887764d29c8cf1e85169a8dc9c8182bb2
 
     if symbol not in sym2idx:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in {market} model universe")
