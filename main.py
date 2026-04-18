@@ -1,6 +1,6 @@
 """
 PRISM — Stock Intelligence Platform
-FastAPI Backend
+FastAPI Backend  (US + India dual-market)
 ============================================================
 Endpoints
 ---------
@@ -11,6 +11,8 @@ GET  /api/history          → OHLCV history for a given period
 GET  /api/model/metrics    → train/test split evaluation metrics
 GET  /api/model/aggregate-metrics → overall aggregated model metrics
 GET  /health               → liveness probe
+
+All data endpoints accept an optional  ?market=US  or  ?market=IN
 ============================================================
 """
 
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import yfinance as yf
@@ -39,14 +42,26 @@ from sklearn.preprocessing import RobustScaler
 # Config
 # ──────────────────────────────────────────────────────────────
 
-MODEL_PATH   = Path(os.getenv("MODEL_PATH", "aapl_multi_stock_lstm.pth"))
-DEVICE       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SEQ_LEN      = 30
-N_FEATURES   = 26
-HIDDEN_SIZE  = 128
-N_LAYERS     = 2
-EMBED_DIM    = 12
-DROPOUT      = 0.35
+US_MODEL_PATH    = Path(os.getenv("US_MODEL_PATH", "aapl_multi_stock_lstm.pth"))
+INDIA_MODEL_PATH = Path(os.getenv("INDIA_MODEL_PATH", "multi_stock_lstm_v2.pth"))
+DEVICE           = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# US hyper-params (must match training)
+US_SEQ_LEN      = 30
+US_N_FEATURES   = 26
+US_HIDDEN_SIZE  = 128
+US_N_LAYERS     = 2
+US_EMBED_DIM    = 12
+US_DROPOUT      = 0.35
+
+# India hyper-params (read from checkpoint, hard-coded as fallback)
+IN_SEQ_LEN      = 30
+IN_N_FEATURES   = 33
+IN_HIDDEN_SIZE  = 128
+IN_N_LAYERS     = 2
+IN_EMBED_DIM    = 12
+IN_DROPOUT      = 0.35
+IN_RESIDUAL_MA  = 5        # residual_ma_win from checkpoint
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,10 +70,10 @@ logging.basicConfig(
 log = logging.getLogger("prism")
 
 # ──────────────────────────────────────────────────────────────
-# Stock Universe  (30 tickers used during training)
+# US Stock Universe  (30 tickers)
 # ──────────────────────────────────────────────────────────────
 
-STOCKS: list[dict[str, str]] = [
+US_STOCKS: list[dict[str, str]] = [
     {"symbol": "AAPL",  "name": "Apple Inc.",                "sector": "Technology"},
     {"symbol": "MSFT",  "name": "Microsoft Corporation",     "sector": "Technology"},
     {"symbol": "GOOGL", "name": "Alphabet Inc.",              "sector": "Technology"},
@@ -91,11 +106,52 @@ STOCKS: list[dict[str, str]] = [
     {"symbol": "AMD",   "name": "Advanced Micro Devices",     "sector": "Technology"},
 ]
 
-# Build quick lookup maps
-SYMBOL_TO_IDX  = {s["symbol"]: i for i, s in enumerate(STOCKS)}
-SYMBOL_TO_META = {s["symbol"]: s for s in STOCKS}
+US_SYMBOL_TO_IDX  = {s["symbol"]: i for i, s in enumerate(US_STOCKS)}
+US_SYMBOL_TO_META = {s["symbol"]: s for s in US_STOCKS}
 
-# Curated per-stock train/test metrics provided by user.
+# ──────────────────────────────────────────────────────────────
+# India Stock Universe  (29 tickers — NSE)
+# ──────────────────────────────────────────────────────────────
+
+INDIA_STOCKS: list[dict[str, str]] = [
+    {"symbol": "RELIANCE.NS",   "name": "Reliance Industries",    "sector": "Energy"},
+    {"symbol": "TCS.NS",        "name": "Tata Consultancy",       "sector": "IT"},
+    {"symbol": "HDFCBANK.NS",   "name": "HDFC Bank",              "sector": "Banking"},
+    {"symbol": "BHARTIARTL.NS", "name": "Bharti Airtel",          "sector": "Telecom"},
+    {"symbol": "ICICIBANK.NS",  "name": "ICICI Bank",             "sector": "Banking"},
+    {"symbol": "SBIN.NS",       "name": "State Bank of India",    "sector": "Banking"},
+    {"symbol": "INFY.NS",       "name": "Infosys",                "sector": "IT"},
+    {"symbol": "HINDUNILVR.NS", "name": "Hindustan Unilever",     "sector": "FMCG"},
+    {"symbol": "ITC.NS",        "name": "ITC Limited",            "sector": "FMCG"},
+    {"symbol": "LT.NS",         "name": "Larsen & Toubro",        "sector": "Infra"},
+    {"symbol": "BAJFINANCE.NS", "name": "Bajaj Finance",          "sector": "Finance"},
+    {"symbol": "SUNPHARMA.NS",  "name": "Sun Pharma",             "sector": "Pharma"},
+    {"symbol": "MARUTI.NS",     "name": "Maruti Suzuki",          "sector": "Auto"},
+    {"symbol": "HCLTECH.NS",    "name": "HCL Technologies",       "sector": "IT"},
+    {"symbol": "ADANIENT.NS",   "name": "Adani Enterprises",      "sector": "Conglom."},
+    {"symbol": "TITAN.NS",      "name": "Titan Company",          "sector": "Consumer"},
+    {"symbol": "TATASTEEL.NS",  "name": "Tata Steel",             "sector": "Metals"},
+    {"symbol": "NTPC.NS",       "name": "NTPC Limited",           "sector": "Energy"},
+    {"symbol": "ASIANPAINT.NS", "name": "Asian Paints",           "sector": "Consumer"},
+    {"symbol": "KOTAKBANK.NS",  "name": "Kotak Mahindra Bank",    "sector": "Banking"},
+    {"symbol": "M&M.NS",        "name": "Mahindra & Mahindra",    "sector": "Auto"},
+    {"symbol": "ADANIPORTS.NS", "name": "Adani Ports",            "sector": "Infra"},
+    {"symbol": "AXISBANK.NS",   "name": "Axis Bank",              "sector": "Banking"},
+    {"symbol": "ONGC.NS",       "name": "ONGC",                   "sector": "Energy"},
+    {"symbol": "ULTRACEMCO.NS", "name": "UltraTech Cement",       "sector": "Cement"},
+    {"symbol": "POWERGRID.NS",  "name": "Power Grid Corp",        "sector": "Energy"},
+    {"symbol": "COALINDIA.NS",  "name": "Coal India",             "sector": "Mining"},
+    {"symbol": "WIPRO.NS",      "name": "Wipro",                  "sector": "IT"},
+    {"symbol": "BAJAJFINSV.NS", "name": "Bajaj Finserv",          "sector": "Finance"},
+]
+
+IN_SYMBOL_TO_IDX  = {s["symbol"]: i for i, s in enumerate(INDIA_STOCKS)}
+IN_SYMBOL_TO_META = {s["symbol"]: s for s in INDIA_STOCKS}
+
+# ──────────────────────────────────────────────────────────────
+# Curated per-stock train/test metrics (US model)
+# ──────────────────────────────────────────────────────────────
+
 CURATED_STOCK_METRICS: dict[str, dict[str, dict[str, float] | None]] = {
     "AAPL":  {"train": {"mae": 2.1128, "rmse": 2.8409, "mape": 1.2451, "r2": 0.9911, "dir_acc": 53.0023}, "test": {"mae": 2.4469, "rmse": 3.4620, "mape": 0.9260, "r2": 0.8649, "dir_acc": 51.3043}},
     "MSFT":  {"train": {"mae": 3.9405, "rmse": 5.2465, "mape": 1.2611, "r2": 0.9941, "dir_acc": 51.5012}, "test": {"mae": 5.4825, "rmse": 7.9643, "mape": 1.2388, "r2": 0.9741, "dir_acc": 43.4783}},
@@ -129,15 +185,155 @@ CURATED_STOCK_METRICS: dict[str, dict[str, dict[str, float] | None]] = {
     "NFLX":  {"train": {"mae": 0.7955, "rmse": 1.2220, "mape": 1.9114, "r2": 0.9960, "dir_acc": 50.5774}, "test": None},
 }
 
-AGGREGATE_MODEL_METRICS: dict[str, Any] = {
+# ──────────────────────────────────────────────────────────────
+# Curated per-stock TRAIN + TEST metrics (India model)
+# Source: results/india/metrics_per_stock_train.csv  (train)
+#         results/india/metrics_per_stock_test.csv   (test)
+# ──────────────────────────────────────────────────────────────
+
+INDIA_CURATED_STOCK_METRICS: dict[str, dict[str, dict[str, float] | None]] = {
+    "RELIANCE.NS":   {
+        "train": {"mae": 11.8872, "rmse": 15.9631, "mape": 0.9730, "r2": 0.9867, "dir_acc": 54.1716},
+        "test":  {"mae": 13.3908, "rmse": 17.6792, "mape": 0.9287, "r2": 0.9460, "dir_acc": 45.5357},
+    },
+    "TCS.NS":        {
+        "train": {"mae": 30.2365, "rmse": 40.2258, "mape": 0.9004, "r2": 0.9904, "dir_acc": 51.7039},
+        "test":  {"mae": 29.9824, "rmse": 40.1865, "mape": 1.0428, "r2": 0.9818, "dir_acc": 52.6786},
+    },
+    "HDFCBANK.NS":   {
+        "train": {"mae":  6.3794, "rmse":  8.9503, "mape": 0.8484, "r2": 0.9790, "dir_acc": 54.7591},
+        "test":  {"mae":  7.7959, "rmse": 10.8080, "mape": 0.8901, "r2": 0.9807, "dir_acc": 56.2500},
+    },
+    "BHARTIARTL.NS": {
+        "train": {"mae":  8.9987, "rmse": 12.6219, "mape": 0.9322, "r2": 0.9985, "dir_acc": 52.8790},
+        "test":  {"mae": 16.2916, "rmse": 21.4299, "mape": 0.8244, "r2": 0.9633, "dir_acc": 58.0357},
+    },
+    "ICICIBANK.NS":  {
+        "train": {"mae":  7.8512, "rmse": 10.6974, "mape": 0.8536, "r2": 0.9967, "dir_acc": 54.0541},
+        "test":  {"mae": 11.8248, "rmse": 15.4284, "mape": 0.8832, "r2": 0.9179, "dir_acc": 57.1429},
+    },
+    "SBIN.NS":       {
+        "train": {"mae":  6.1699, "rmse":  9.0201, "mape": 1.0461, "r2": 0.9955, "dir_acc": 57.3443},
+        "test":  {"mae": 10.0801, "rmse": 14.4405, "mape": 0.9565, "r2": 0.9686, "dir_acc": 57.1429},
+    },
+    "INFY.NS":       {
+        "train": {"mae": 15.4783, "rmse": 20.6008, "mape": 1.0448, "r2": 0.9887, "dir_acc": 52.8790},
+        "test":  {"mae": 17.1201, "rmse": 22.8290, "mape": 1.1631, "r2": 0.9764, "dir_acc": 45.5357},
+    },
+    "HINDUNILVR.NS": {
+        "train": {"mae": 20.7555, "rmse": 27.6871, "mape": 0.8837, "r2": 0.9786, "dir_acc": 51.8214},
+        "test":  {"mae": 20.5689, "rmse": 27.5138, "mape": 0.8958, "r2": 0.9447, "dir_acc": 53.5714},
+    },
+    "ITC.NS":        {
+        "train": {"mae":  2.7418, "rmse":  3.7205, "mape": 0.8608, "r2": 0.9984, "dir_acc": 54.0541},
+        "test":  {"mae":  2.9017, "rmse":  4.5136, "mape": 0.8648, "r2": 0.9880, "dir_acc": 57.1429},
+    },
+    "LT.NS":         {
+        "train": {"mae": 26.1940, "rmse": 38.1777, "mape": 1.0230, "r2": 0.9977, "dir_acc": 55.6992},
+        "test":  {"mae": 45.6394, "rmse": 64.3773, "mape": 1.1759, "r2": 0.9091, "dir_acc": 55.3571},
+    },
+    "BAJFINANCE.NS": {
+        "train": {"mae":  7.8004, "rmse": 10.6035, "mape": 1.1403, "r2": 0.9672, "dir_acc": 56.7568},
+        "test":  {"mae": 12.7801, "rmse": 17.8325, "mape": 1.3540, "r2": 0.9213, "dir_acc": 57.1429},
+    },
+    "SUNPHARMA.NS":  {
+        "train": {"mae":  9.6992, "rmse": 12.9766, "mape": 0.8547, "r2": 0.9987, "dir_acc": 53.4665},
+        "test":  {"mae": 14.6072, "rmse": 19.1541, "mape": 0.8487, "r2": 0.8785, "dir_acc": 55.3571},
+    },
+    "MARUTI.NS":     {
+        "train": {"mae": 91.8227, "rmse": 124.7229, "mape": 0.9821, "r2": 0.9952, "dir_acc": 50.8813},
+        "test":  {"mae": 161.8532, "rmse": 204.5730, "mape": 1.1014, "r2": 0.9769, "dir_acc": 54.4643},
+    },
+    "HCLTECH.NS":    {
+        "train": {"mae": 11.8923, "rmse": 16.7713, "mape": 1.0032, "r2": 0.9969, "dir_acc": 52.8790},
+        "test":  {"mae": 15.8617, "rmse": 20.7299, "mape": 1.0405, "r2": 0.9726, "dir_acc": 51.7857},
+    },
+    "ADANIENT.NS":   {
+        "train": {"mae": 43.5514, "rmse": 73.9328, "mape": 1.8021, "r2": 0.9879, "dir_acc": 56.6392},
+        "test":  {"mae": 32.7450, "rmse": 44.4993, "mape": 1.5367, "r2": 0.9279, "dir_acc": 60.7143},
+    },
+    "TITAN.NS":      {
+        "train": {"mae": 28.6158, "rmse": 38.3783, "mape": 1.0112, "r2": 0.9947, "dir_acc": 54.5241},
+        "test":  {"mae": 37.8986, "rmse": 53.0952, "mape": 0.9272, "r2": 0.9255, "dir_acc": 57.1429},
+    },
+    "TATASTEEL.NS":  {
+        "train": {"mae":  1.5076, "rmse":  2.0944, "mape": 1.2866, "r2": 0.9915, "dir_acc": 54.6416},
+        "test":  {"mae":  2.5239, "rmse":  3.4087, "mape": 1.3349, "r2": 0.9447, "dir_acc": 55.3571},
+    },
+    "NTPC.NS":       {
+        "train": {"mae":  2.4817, "rmse":  3.9055, "mape": 1.1101, "r2": 0.9984, "dir_acc": 53.3490},
+        "test":  {"mae":  3.2212, "rmse":  4.1627, "mape": 0.9105, "r2": 0.9705, "dir_acc": 49.1071},
+    },
+    "ASIANPAINT.NS": {
+        "train": {"mae": 27.2141, "rmse": 36.8342, "mape": 0.9253, "r2": 0.9800, "dir_acc": 55.5817},
+        "test":  {"mae": 30.0681, "rmse": 38.1951, "mape": 1.1889, "r2": 0.9775, "dir_acc": 56.2500},
+    },
+    "KOTAKBANK.NS":  {
+        "train": {"mae":  3.5012, "rmse":  4.7980, "mape": 0.9609, "r2": 0.9325, "dir_acc": 53.5840},
+        "test":  {"mae":  3.6852, "rmse":  4.7467, "mape": 0.9125, "r2": 0.9600, "dir_acc": 55.3571},
+    },
+    "M&M.NS":        {
+        "train": {"mae": 19.8375, "rmse": 28.6115, "mape": 1.2068, "r2": 0.9985, "dir_acc": 52.8790},
+        "test":  {"mae": 42.0536, "rmse": 55.0165, "mape": 1.2450, "r2": 0.9474, "dir_acc": 51.7857},
+    },
+    "ADANIPORTS.NS": {
+        "train": {"mae": 13.3250, "rmse": 21.8323, "mape": 1.4569, "r2": 0.9941, "dir_acc": 52.8790},
+        "test":  {"mae": 18.0786, "rmse": 24.8318, "mape": 1.2459, "r2": 0.8523, "dir_acc": 57.1429},
+    },
+    "AXISBANK.NS":   {
+        "train": {"mae":  9.4546, "rmse": 12.7199, "mape": 1.0253, "r2": 0.9948, "dir_acc": 53.5840},
+        "test":  {"mae": 14.2826, "rmse": 19.7581, "mape": 1.1166, "r2": 0.8802, "dir_acc": 51.7857},
+    },
+    "ONGC.NS":       {
+        "train": {"mae":  2.2137, "rmse":  3.4589, "mape": 1.3123, "r2": 0.9967, "dir_acc": 52.7615},
+        "test":  {"mae":  2.7053, "rmse":  3.9463, "mape": 1.0624, "r2": 0.9596, "dir_acc": 50.8929},
+    },
+    "ULTRACEMCO.NS": {
+        "train": {"mae": 80.6669, "rmse": 109.0625, "mape": 0.9759, "r2": 0.9966, "dir_acc": 54.2891},
+        "test":  {"mae": 127.9596, "rmse": 176.2685, "mape": 1.0885, "r2": 0.9242, "dir_acc": 51.7857},
+    },
+    "POWERGRID.NS":  {
+        "train": {"mae":  2.1673, "rmse":  3.2845, "mape": 1.1013, "r2": 0.9979, "dir_acc": 49.8237},
+        "test":  {"mae":  2.4603, "rmse":  3.3041, "mape": 0.8795, "r2": 0.9671, "dir_acc": 57.1429},
+    },
+    "COALINDIA.NS":  {
+        "train": {"mae":  3.0867, "rmse":  4.8862, "mape": 1.2622, "r2": 0.9983, "dir_acc": 51.2338},
+        "test":  {"mae":  4.9101, "rmse":  6.8415, "mape": 1.1602, "r2": 0.9488, "dir_acc": 45.5357},
+    },
+    "WIPRO.NS":      {
+        "train": {"mae":  2.4825, "rmse":  3.4365, "mape": 1.0689, "r2": 0.9938, "dir_acc": 54.1716},
+        "test":  {"mae":  2.5831, "rmse":  3.4142, "mape": 1.1367, "r2": 0.9798, "dir_acc": 47.3214},
+    },
+    "BAJAJFINSV.NS": {
+        "train": {"mae": 17.9131, "rmse": 23.7996, "mape": 1.1323, "r2": 0.9791, "dir_acc": 53.2315},
+        "test":  {"mae": 20.3871, "rmse": 27.6200, "mape": 1.0601, "r2": 0.9544, "dir_acc": 51.7857},
+    },
+}
+
+US_AGGREGATE_MODEL_METRICS: dict[str, Any] = {
     "scope": "aggregate_all_stocks",
     "source": "provided_aggregate_summary",
+    "market": "US",
     "rows": [
         {"metric": "MAE", "train": 2.716726, "test": 4.148920, "difference": 1.432194},
         {"metric": "RMSE", "train": 3.918751, "test": 5.701946, "difference": 1.783196},
         {"metric": "MAPE", "train": 1.292997, "test": 1.289340, "difference": -0.003657},
         {"metric": "R2", "train": 0.988981, "test": 0.904052, "difference": -0.084929},
         {"metric": "DirAcc", "train": 52.563510, "test": 50.289855, "difference": -2.273655},
+    ],
+}
+
+IN_AGGREGATE_MODEL_METRICS: dict[str, Any] = {
+    "scope": "aggregate_all_stocks",
+    "source": "metrics_overall_summary_csv",
+    "market": "IN",
+    "rows": [
+        # From results/india/metrics_overall_summary.csv (mean across 29 stocks)
+        {"metric": "MAE",    "train": 17.7906, "test": 25.0435, "difference": round(25.0435 - 17.7906, 4)},
+        {"metric": "RMSE",   "train": 24.9577, "test": 33.4691, "difference": round(33.4691 - 24.9577, 4)},
+        {"metric": "MAPE",   "train":  1.0684, "test":  1.0612, "difference": round( 1.0612 -  1.0684, 4)},
+        {"metric": "R2",     "train":  0.9898, "test":  0.9464, "difference": round( 0.9464 -  0.9898, 4)},
+        {"metric": "DirAcc", "train": 53.6732, "test": 53.6638, "difference": round(53.6638 - 53.6732, 4)},
     ],
 }
 
@@ -154,13 +350,64 @@ def _metric_block(raw: dict[str, float] | None) -> dict[str, float | None]:
         "n": raw.get("n"),
     }
 
+
+# Shares outstanding (approximate, millions) for market-cap calc
+US_SHARES_OUT_M = {
+    "AAPL": 15340, "MSFT": 7430, "GOOGL": 12380, "AMZN": 10390, "NVDA": 24600,
+    "META": 2540, "TSLA": 3180, "BRK-B": 2160, "JPM": 2870, "V": 2040,
+    "JNJ": 2400, "WMT": 8040, "PG": 2350, "MA": 930, "HD": 990,
+    "CVX": 1840, "MRK": 2530, "ABBV": 1760, "PFE": 5640, "BAC": 7870,
+    "KO": 4300, "PEP": 1370, "COST": 440, "AVGO": 4650, "CSCO": 4010,
+    "ADBE": 450, "CRM": 970, "NFLX": 430, "INTC": 4220, "AMD": 1610,
+    "UNH": 920, "XOM": 3950, "LLY": 900, "MCD": 720,
+}
+
+IN_SHARES_OUT_M = {
+    "RELIANCE.NS": 6766, "TCS.NS": 3662, "HDFCBANK.NS": 7630,
+    "BHARTIARTL.NS": 5690, "ICICIBANK.NS": 7025, "SBIN.NS": 8925,
+    "INFY.NS": 4183, "HINDUNILVR.NS": 2350, "ITC.NS": 12475,
+    "LT.NS": 1375, "BAJFINANCE.NS": 616, "SUNPHARMA.NS": 2399,
+    "MARUTI.NS": 302, "HCLTECH.NS": 2716, "ADANIENT.NS": 1142,
+    "TITAN.NS": 887, "TATASTEEL.NS": 1215, "NTPC.NS": 9696,
+    "ASIANPAINT.NS": 959, "KOTAKBANK.NS": 1989, "M&M.NS": 1245,
+    "ADANIPORTS.NS": 2161, "AXISBANK.NS": 3089, "ONGC.NS": 12580,
+    "ULTRACEMCO.NS": 289, "POWERGRID.NS": 6972, "COALINDIA.NS": 6163,
+    "WIPRO.NS": 5242, "BAJAJFINSV.NS": 159,
+}
+
+
 # ──────────────────────────────────────────────────────────────
-# LSTM Model Architecture  (must match training exactly)
+# Market-helper: choose config by market string
+# ──────────────────────────────────────────────────────────────
+
+def _resolve_market(market: str) -> str:
+    """Normalise market string to 'US' or 'IN'."""
+    m = market.strip().upper()
+    if m in {"IN", "INDIA", "NSE"}:
+        return "IN"
+    return "US"
+
+
+def _stocks_for(market: str):
+    return INDIA_STOCKS if market == "IN" else US_STOCKS
+
+def _sym2idx(market: str):
+    return IN_SYMBOL_TO_IDX if market == "IN" else US_SYMBOL_TO_IDX
+
+def _sym2meta(market: str):
+    return IN_SYMBOL_TO_META if market == "IN" else US_SYMBOL_TO_META
+
+def _shares(market: str):
+    return IN_SHARES_OUT_M if market == "IN" else US_SHARES_OUT_M
+
+
+# ──────────────────────────────────────────────────────────────
+# LSTM Model Architecture — US (must match training exactly)
 # ──────────────────────────────────────────────────────────────
 
 class MultiStockLSTM(nn.Module):
     """
-    Multi-stock LSTM with per-stock learned embeddings.
+    US Multi-stock LSTM with per-stock learned embeddings.
 
     Input per timestep: [n_features]  →  concat with embed  →  LSTM  →  FC
     Output: scalar next-day log-return
@@ -201,10 +448,66 @@ class MultiStockLSTM(nn.Module):
 
 
 # ──────────────────────────────────────────────────────────────
-# Feature Engineering  (26 features, same order as training)
+# LSTM Model Architecture — India (v2)
+# emb → proj(Linear+LN) → LSTM → LN → head(Linear→GELU→Drop→Linear→GELU→Linear)
 # ──────────────────────────────────────────────────────────────
 
-def build_features(df) -> np.ndarray:
+class IndiaMultiStockLSTM(nn.Module):
+    """
+    India v2 Multi-stock LSTM with projection layer and deeper head.
+    """
+
+    def __init__(
+        self,
+        n_stocks: int  = 29,
+        n_feat: int    = 33,
+        embed_dim: int = 12,
+        hidden: int    = 128,
+        n_layers: int  = 2,
+        dropout: float = 0.35,
+    ) -> None:
+        super().__init__()
+        self.emb  = nn.Embedding(n_stocks, embed_dim)
+        self.proj = nn.Sequential(
+            nn.Linear(n_feat + embed_dim, hidden),
+            nn.LayerNorm(hidden),
+        )
+        self.lstm = nn.LSTM(
+            input_size  = hidden,
+            hidden_size = hidden,
+            num_layers  = n_layers,
+            batch_first = True,
+            dropout     = dropout if n_layers > 1 else 0.0,
+        )
+        self.ln   = nn.LayerNorm(hidden)
+        self.head = nn.Sequential(
+            nn.Linear(hidden, 64),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,          # (batch, seq, n_feat)
+        stock_ids: torch.Tensor,  # (batch,)
+    ) -> torch.Tensor:
+        emb = self.emb(stock_ids)
+        emb = emb.unsqueeze(1).expand(-1, x.size(1), -1)
+        x   = torch.cat([x, emb], dim=-1)
+        x   = self.proj(x)
+        out, _ = self.lstm(x)
+        out = self.ln(out[:, -1, :])
+        return self.head(out).squeeze(-1)
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature Engineering — US (26 features, same order as training)
+# ──────────────────────────────────────────────────────────────
+
+def build_features_us(df) -> np.ndarray:
     """
     Computes 26 technical features from a raw OHLCV DataFrame.
     Returns an array of shape (T, 26).  Rows with NaN are forward-filled.
@@ -337,27 +640,250 @@ def build_features(df) -> np.ndarray:
 
 
 # ──────────────────────────────────────────────────────────────
-# Model loader (singleton)
+# Feature Engineering — India (33 features)
+# ──────────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=4)
+def _fetch_market_benchmarks(period: str = "2y"):
+    """
+    Fetch NASDAQ, S&P500, USD/INR for India model market features.
+    Cached to avoid redundant downloads.
+    """
+    log.info("Fetching market benchmarks (NASDAQ, S&P500, USD/INR) for India model…")
+    ndaq  = yf.Ticker("^IXIC").history(period=period, auto_adjust=True)
+    sp500 = yf.Ticker("^GSPC").history(period=period, auto_adjust=True)
+    usdinr = yf.Ticker("USDINR=X").history(period=period, auto_adjust=True)
+
+    for df in (ndaq, sp500, usdinr):
+        df.index = df.index.tz_localize(None)
+
+    return {
+        "ndaq": ndaq["Close"].values.astype(np.float64),
+        "ndaq_dates": ndaq.index,
+        "sp": sp500["Close"].values.astype(np.float64),
+        "sp_dates": sp500.index,
+        "usdinr": usdinr["Close"].values.astype(np.float64),
+        "usdinr_dates": usdinr.index,
+    }
+
+
+def _align_benchmark(bm_vals: np.ndarray, bm_dates, stock_dates) -> np.ndarray:
+    """Align benchmark series to stock dates by forward-fill nearest match."""
+    bm_series = pd.Series(bm_vals, index=bm_dates)
+    aligned   = bm_series.reindex(stock_dates, method="ffill").fillna(method="bfill")
+    return aligned.values.astype(np.float64)
+
+
+def build_features_india(df) -> np.ndarray:
+    """
+    Computes 33 technical + market features for India model.
+    Order matches: lr1, lr5, lr21, pma10, pma21, pma63, ma_cross,
+                   rsi14, rsi7, macd, macd_s, macd_h,
+                   rv5, rv21, bb_pct, bb_w, atr,
+                   vol_r, vol_lr, obv_d, hl_pct, oc_pct,
+                   dow_s, dow_c, mon_s, mon_c,
+                   ndaq_lr1, ndaq_lr5, ndaq_rv5, sp_lr1, sp_lr5,
+                   usdinr_lr1, usdinr_pma21
+    """
+    c  = df["Close"].values.astype(np.float64)
+    h  = df["High"].values.astype(np.float64)
+    lo = df["Low"].values.astype(np.float64)
+    v  = df["Volume"].values.astype(np.float64)
+    o  = df["Open"].values.astype(np.float64)
+    T  = len(c)
+
+    def ema(arr, span):
+        k, r = 2 / (span + 1), arr.copy()
+        for i in range(1, len(arr)):
+            r[i] = arr[i] * k + r[i - 1] * (1 - k)
+        return r
+
+    def rolling_mean(arr, w):
+        out = np.full_like(arr, np.nan)
+        for i in range(w - 1, len(arr)):
+            out[i] = arr[i - w + 1 : i + 1].mean()
+        return out
+
+    def rolling_std(arr, w):
+        out = np.full_like(arr, np.nan)
+        for i in range(w - 1, len(arr)):
+            out[i] = arr[i - w + 1 : i + 1].std(ddof=0)
+        return out
+
+    # --- log returns ---
+    lr1  = np.diff(np.log(c + 1e-9), prepend=np.nan)
+    lr5  = np.concatenate([[np.nan]*5,  np.log(c[5:]  / (c[:-5]  + 1e-9))])
+    lr21 = np.concatenate([[np.nan]*21, np.log(c[21:] / (c[:-21] + 1e-9))])
+
+    # --- price / MA ---
+    ma10 = rolling_mean(c, 10)
+    ma21 = rolling_mean(c, 21)
+    ma63 = rolling_mean(c, 63)
+    pma10    = (c - ma10) / (ma10 + 1e-9)
+    pma21    = (c - ma21) / (ma21 + 1e-9)
+    pma63    = (c - ma63) / (ma63 + 1e-9)
+    ma_cross = (ma10 / (ma21 + 1e-9)) - 1.0
+
+    # --- RSI ---
+    def calc_rsi(arr, period):
+        delta = np.diff(arr, prepend=arr[0])
+        gain  = np.where(delta > 0, delta, 0.0)
+        loss  = np.where(delta < 0, -delta, 0.0)
+        ag = ema(gain, period)
+        al = ema(loss, period)
+        rs = ag / (al + 1e-9)
+        return 100 - 100 / (1 + rs)
+
+    rsi14 = calc_rsi(c, 14)
+    rsi7  = calc_rsi(c, 7)
+
+    # --- MACD ---
+    ema12 = ema(c, 12)
+    ema26 = ema(c, 26)
+    macd_line = ema12 - ema26
+    macd_sig  = ema(macd_line, 9)
+    macd_hist = macd_line - macd_sig
+
+    # --- Realized vol ---
+    daily_ret = np.diff(np.log(c + 1e-9), prepend=np.nan)
+    rv5  = rolling_std(daily_ret, 5)
+    rv21 = rolling_std(daily_ret, 21)
+
+    # --- Bollinger ---
+    bb_mid = rolling_mean(c, 20)
+    bb_std = rolling_std(c, 20)
+    bb_up  = bb_mid + 2 * bb_std
+    bb_dn  = bb_mid - 2 * bb_std
+    bb_pct = (c - bb_dn) / (bb_up - bb_dn + 1e-9)
+    bb_w   = (bb_up - bb_dn) / (bb_mid + 1e-9)
+
+    # --- ATR ---
+    tr  = np.maximum(h - lo, np.maximum(np.abs(h - np.roll(c, 1)),
+                                        np.abs(lo - np.roll(c, 1))))
+    atr = rolling_mean(tr, 14)
+
+    # --- Volume ---
+    vol_ma20 = rolling_mean(v, 20)
+    vol_r    = v / (vol_ma20 + 1e-9)
+    vol_lr   = np.diff(np.log(v + 1e-9), prepend=np.nan)
+
+    # --- OBV delta ---
+    direction = np.sign(np.diff(c, prepend=c[0]))
+    obv       = np.cumsum(v * direction)
+    obv_d     = np.diff(obv, prepend=obv[0])
+    obv_d     = obv_d / (np.abs(obv_d).max() + 1e-9)
+
+    # --- Spread ---
+    hl_pct = (h - lo) / (c + 1e-9)
+    oc_pct = (c - o)  / (o + 1e-9)
+
+    # --- Calendar cyclical ---
+    dates_idx = df.index
+    dow = np.array([d.weekday() for d in dates_idx], dtype=np.float64)
+    mon = np.array([d.month     for d in dates_idx], dtype=np.float64)
+    dow_s = np.sin(2 * np.pi * dow / 5)
+    dow_c = np.cos(2 * np.pi * dow / 5)
+    mon_s = np.sin(2 * np.pi * mon / 12)
+    mon_c = np.cos(2 * np.pi * mon / 12)
+
+    # --- Market benchmarks ---
+    try:
+        bm = _fetch_market_benchmarks("2y")
+        ndaq_c   = _align_benchmark(bm["ndaq"],   bm["ndaq_dates"],   dates_idx)
+        sp_c     = _align_benchmark(bm["sp"],      bm["sp_dates"],     dates_idx)
+        usdinr_c = _align_benchmark(bm["usdinr"],  bm["usdinr_dates"], dates_idx)
+    except Exception as e:
+        log.warning("Benchmark fetch failed (%s), using zeros.", e)
+        ndaq_c   = np.ones(T)
+        sp_c     = np.ones(T)
+        usdinr_c = np.ones(T)
+
+    ndaq_lr1  = np.diff(np.log(ndaq_c + 1e-9), prepend=np.nan)
+    ndaq_lr5  = np.concatenate([[np.nan]*5, np.log(ndaq_c[5:] / (ndaq_c[:-5] + 1e-9))])
+    ndaq_ret  = np.diff(np.log(ndaq_c + 1e-9), prepend=np.nan)
+    ndaq_rv5  = rolling_std(ndaq_ret, 5)
+
+    sp_lr1    = np.diff(np.log(sp_c + 1e-9), prepend=np.nan)
+    sp_lr5    = np.concatenate([[np.nan]*5, np.log(sp_c[5:] / (sp_c[:-5] + 1e-9))])
+
+    usdinr_lr1   = np.diff(np.log(usdinr_c + 1e-9), prepend=np.nan)
+    usdinr_ma21  = rolling_mean(usdinr_c, 21)
+    usdinr_pma21 = (usdinr_c - usdinr_ma21) / (usdinr_ma21 + 1e-9)
+
+    # --- Assemble 33 columns ---
+    features = np.column_stack([
+        lr1, lr5, lr21,                       # 0-2
+        pma10, pma21, pma63, ma_cross,        # 3-6
+        rsi14, rsi7,                          # 7-8
+        macd_line, macd_sig, macd_hist,       # 9-11
+        rv5, rv21,                            # 12-13
+        bb_pct, bb_w,                         # 14-15
+        atr,                                  # 16
+        vol_r, vol_lr,                        # 17-18
+        obv_d,                                # 19
+        hl_pct, oc_pct,                       # 20-21
+        dow_s, dow_c, mon_s, mon_c,           # 22-25
+        ndaq_lr1, ndaq_lr5, ndaq_rv5,         # 26-28
+        sp_lr1, sp_lr5,                       # 29-30
+        usdinr_lr1, usdinr_pma21,             # 31-32
+    ])
+
+    # Forward-fill NaN, then fill remaining with 0
+    for col in range(features.shape[1]):
+        mask = np.isnan(features[:, col])
+        idx  = np.where(~mask)[0]
+        if len(idx):
+            features[:, col] = np.interp(
+                np.arange(len(features[:, col])), idx, features[idx, col]
+            )
+    features = np.nan_to_num(features, nan=0.0)
+    return features.astype(np.float32)
+
+
+# ──────────────────────────────────────────────────────────────
+# Model loader (supports both markets)
 # ──────────────────────────────────────────────────────────────
 
 class ModelRegistry:
     _instance: "ModelRegistry | None" = None
 
     def __init__(self) -> None:
-        self.model      = self._load_model()
-        self.loaded_at  = datetime.utcnow().isoformat()
-        self.meta: dict = {
+        # US model
+        self.us_model      = self._load_us_model()
+        self.us_loaded_at   = datetime.utcnow().isoformat()
+
+        # India model + saved scalers
+        self.in_model, self.in_scalers = self._load_india_model()
+        self.in_loaded_at   = datetime.utcnow().isoformat()
+
+        self.meta_us: dict = {
             "architecture": {
-                "hidden":   HIDDEN_SIZE,
-                "n_layers": N_LAYERS,
-                "embed_dim": EMBED_DIM,
-                "dropout":  DROPOUT,
-                "n_feat":   N_FEATURES,
+                "hidden":   US_HIDDEN_SIZE,
+                "n_layers": US_N_LAYERS,
+                "embed_dim": US_EMBED_DIM,
+                "dropout":  US_DROPOUT,
+                "n_feat":   US_N_FEATURES,
             },
-            "seq_len":  SEQ_LEN,
-            "n_stocks": len(STOCKS),
-            "model_file": MODEL_PATH.name,
+            "seq_len":  US_SEQ_LEN,
+            "n_stocks": len(US_STOCKS),
+            "model_file": US_MODEL_PATH.name,
             "device": str(DEVICE),
+            "market": "US",
+        }
+
+        self.meta_in: dict = {
+            "architecture": {
+                "hidden":   IN_HIDDEN_SIZE,
+                "n_layers": IN_N_LAYERS,
+                "embed_dim": IN_EMBED_DIM,
+                "dropout":  IN_DROPOUT,
+                "n_feat":   IN_N_FEATURES,
+            },
+            "seq_len":  IN_SEQ_LEN,
+            "n_stocks": len(INDIA_STOCKS),
+            "model_file": INDIA_MODEL_PATH.name,
+            "device": str(DEVICE),
+            "market": "IN",
         }
 
     @classmethod
@@ -371,64 +897,122 @@ class ModelRegistry:
         value = os.getenv(var_name, default).strip().lower()
         return value in {"1", "true", "yes", "y", "on"}
 
-    def _load_model(self) -> MultiStockLSTM:
+    # ── US model ──────────────────────────────────────────────
+    def _load_us_model(self) -> MultiStockLSTM:
         net = MultiStockLSTM(
-            n_stocks    = len(STOCKS),
-            n_features  = N_FEATURES,
-            hidden_size = HIDDEN_SIZE,
-            n_layers    = N_LAYERS,
-            embed_dim   = EMBED_DIM,
-            dropout     = DROPOUT,
+            n_stocks    = len(US_STOCKS),
+            n_features  = US_N_FEATURES,
+            hidden_size = US_HIDDEN_SIZE,
+            n_layers    = US_N_LAYERS,
+            embed_dim   = US_EMBED_DIM,
+            dropout     = US_DROPOUT,
         ).to(DEVICE)
 
-        if MODEL_PATH.exists():
+        if US_MODEL_PATH.exists():
             try:
-                state = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
-                # unwrap common checkpoint wrappers
+                state = torch.load(US_MODEL_PATH, map_location=DEVICE, weights_only=True)
                 if isinstance(state, dict):
                     state = state.get("model_state_dict", state.get("state_dict", state))
                 net.load_state_dict(state, strict=False)
-                log.info("✓ Model loaded from %s on %s", MODEL_PATH, DEVICE)
-            except Exception as exc:
-                # PyTorch 2.6 defaults to weights_only=True. Older checkpoints can include
-                # trusted Python objects (e.g., sklearn scalers) and require weights_only=False.
+                log.info("✓ US model loaded from %s", US_MODEL_PATH)
+            except Exception:
                 if self._is_truthy_env("TRUSTED_MODEL_CHECKPOINT", "true"):
                     try:
-                        state = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
+                        state = torch.load(US_MODEL_PATH, map_location=DEVICE, weights_only=False)
                         if isinstance(state, dict):
                             state = state.get("model_state_dict", state.get("state_dict", state))
                         net.load_state_dict(state, strict=False)
-                        log.info("✓ Model loaded from trusted checkpoint %s on %s", MODEL_PATH, DEVICE)
-                    except Exception as retry_exc:
-                        log.warning("Could not load weights (%s). Running with random weights.", retry_exc)
-                else:
-                    log.warning(
-                        "Could not load weights with weights_only=True (%s). "
-                        "Set TRUSTED_MODEL_CHECKPOINT=true to allow trusted full checkpoint loading.",
-                        exc,
-                    )
+                        log.info("✓ US model loaded (trusted) from %s", US_MODEL_PATH)
+                    except Exception as exc:
+                        log.warning("US model load failed (%s). Random weights.", exc)
         else:
-            log.warning("Model file %s not found. Running with random weights.", MODEL_PATH)
+            log.warning("US model %s not found. Random weights.", US_MODEL_PATH)
 
         net.eval()
         return net
 
+    # ── India model ───────────────────────────────────────────
+    def _load_india_model(self) -> tuple:
+        net = IndiaMultiStockLSTM(
+            n_stocks  = len(INDIA_STOCKS),
+            n_feat    = IN_N_FEATURES,
+            embed_dim = IN_EMBED_DIM,
+            hidden    = IN_HIDDEN_SIZE,
+            n_layers  = IN_N_LAYERS,
+            dropout   = IN_DROPOUT,
+        ).to(DEVICE)
+
+        scalers: dict = {}
+
+        if INDIA_MODEL_PATH.exists():
+            try:
+                ckpt = torch.load(INDIA_MODEL_PATH, map_location=DEVICE, weights_only=False)
+                model_state = ckpt.get("model_state", ckpt)
+                if isinstance(model_state, dict) and "emb.weight" in model_state:
+                    net.load_state_dict(model_state, strict=False)
+                    log.info("✓ India model loaded from %s", INDIA_MODEL_PATH)
+                else:
+                    log.warning("India checkpoint has unexpected structure.")
+
+                # Extract per-ticker scalers
+                saved_scalers = ckpt.get("scalers", {})
+                if isinstance(saved_scalers, dict):
+                    scalers = saved_scalers
+                    log.info("  → %d per-ticker scalers loaded", len(scalers))
+
+            except Exception as exc:
+                log.warning("India model load failed (%s). Random weights.", exc)
+        else:
+            log.warning("India model %s not found. Random weights.", INDIA_MODEL_PATH)
+
+        net.eval()
+        return net, scalers
+
+    # ── Prediction helpers ────────────────────────────────────
+
+    def get_model(self, market: str):
+        return self.in_model if market == "IN" else self.us_model
+
+    def get_meta(self, market: str):
+        return self.meta_in if market == "IN" else self.meta_us
+
     @torch.no_grad()
-    def predict_sequence(
-        self,
-        features: np.ndarray,   # (T, N_FEATURES)
-        stock_idx: int,
+    def predict_sequence_us(
+        self, features: np.ndarray, stock_idx: int,
     ) -> np.ndarray:
         """Return per-timestep next-day return predictions (length = T - SEQ_LEN)."""
         scaler = RobustScaler()
         scaled = scaler.fit_transform(features)
 
-        preds  = []
-        for start in range(len(scaled) - SEQ_LEN):
-            window = scaled[start : start + SEQ_LEN]                  # (SEQ_LEN, N_FEATURES)
+        preds = []
+        for start in range(len(scaled) - US_SEQ_LEN):
+            window = scaled[start : start + US_SEQ_LEN]
             x_t    = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(DEVICE)
             sid    = torch.tensor([stock_idx], dtype=torch.long).to(DEVICE)
-            ret    = self.model(x_t, sid).item()
+            ret    = self.us_model(x_t, sid).item()
+            preds.append(ret)
+
+        return np.array(preds, dtype=np.float32)
+
+    @torch.no_grad()
+    def predict_sequence_india(
+        self, features: np.ndarray, stock_idx: int, symbol: str,
+    ) -> np.ndarray:
+        """Return per-timestep predictions for India model."""
+        # Use saved scaler if available, else fit new one
+        if symbol in self.in_scalers:
+            scaler = self.in_scalers[symbol]
+            scaled = scaler.transform(features)
+        else:
+            scaler = RobustScaler()
+            scaled = scaler.fit_transform(features)
+
+        preds = []
+        for start in range(len(scaled) - IN_SEQ_LEN):
+            window = scaled[start : start + IN_SEQ_LEN]
+            x_t    = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+            sid    = torch.tensor([stock_idx], dtype=torch.long).to(DEVICE)
+            ret    = self.in_model(x_t, sid).item()
             preds.append(ret)
 
         return np.array(preds, dtype=np.float32)
@@ -438,7 +1022,7 @@ class ModelRegistry:
 # Data helpers
 # ──────────────────────────────────────────────────────────────
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=128)
 def _fetch_yf(symbol: str, period: str) -> dict:
     """Cached yfinance fetch. Returns raw dict for JSON serialisation."""
     log.info("yf.download(%s, period=%s)", symbol, period)
@@ -446,13 +1030,9 @@ def _fetch_yf(symbol: str, period: str) -> dict:
     hist   = tk.history(period=period, auto_adjust=True)
     if hist.empty:
         raise ValueError(f"No data for {symbol}")
-    info   = {}
-    try:
-        info = tk.info or {}
-    except Exception:
-        pass
+
     hist.index = hist.index.tz_localize(None)
-    return {"hist": hist, "info": info}
+    return {"hist": hist, "info": {}}
 
 
 def get_history(symbol: str, period: str) -> dict:
@@ -476,34 +1056,41 @@ def _safe(v: Any, decimals: int = 2) -> float | None:
     return round(float(v), decimals)
 
 
-def get_prediction(symbol: str) -> dict:
-    if symbol not in SYMBOL_TO_IDX:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in model universe")
+def get_prediction(symbol: str, market: str) -> dict:
+    sym2idx  = _sym2idx(market)
+    sym2meta = _sym2meta(market)
+    shares   = _shares(market)
 
-    stock_idx = SYMBOL_TO_IDX[symbol]
-    meta      = SYMBOL_TO_META[symbol]
+    if symbol not in sym2idx:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in {market} model universe")
+
+    stock_idx = sym2idx[symbol]
+    meta      = sym2meta[symbol]
+    seq_len   = IN_SEQ_LEN if market == "IN" else US_SEQ_LEN
 
     # Fetch ~2 years so we have enough history for indicators + sequences
     data = _fetch_yf(symbol, "2y")
     hist = data["hist"]
-    info = data["info"]
 
-    if len(hist) < SEQ_LEN + 30:
+    if len(hist) < seq_len + 30:
         raise HTTPException(status_code=422, detail="Not enough historical data")
 
-    features = build_features(hist)          # (T, 26)
-    reg      = ModelRegistry.get()
-    pred_ret = reg.predict_sequence(features, stock_idx)  # (T - SEQ_LEN,)
+    reg = ModelRegistry.get()
+
+    if market == "IN":
+        features = build_features_india(hist)
+        pred_ret = reg.predict_sequence_india(features, stock_idx, symbol)
+    else:
+        features = build_features_us(hist)
+        pred_ret = reg.predict_sequence_us(features, stock_idx)
 
     # Align dates / actual close
     close_arr = hist["Close"].values.astype(np.float64)
     dates_arr = [d.strftime("%Y-%m-%d") for d in hist.index]
 
-    # Align model outputs to true target day:
-    # each pred_ret[t] predicts return from day (t+SEQ_LEN-1) -> (t+SEQ_LEN).
-    aligned_close    = close_arr[SEQ_LEN:]            # actual target close at day t+1
-    aligned_dates    = dates_arr[SEQ_LEN:]            # date of actual target close
-    prev_close_arr   = close_arr[SEQ_LEN - 1 : -1]    # base close at day t
+    aligned_close    = close_arr[seq_len:]
+    aligned_dates    = dates_arr[seq_len:]
+    prev_close_arr   = close_arr[seq_len - 1 : -1]
     predicted_prices = prev_close_arr * np.exp(pred_ret)
 
     latest_close    = float(close_arr[-1])
@@ -515,25 +1102,34 @@ def get_prediction(symbol: str) -> dict:
     last_close = latest_close
     five_day: list[float] = []
     for _ in range(5):
-        last_close = round(last_close * math.exp(next_day_return * 0.85), 4)  # slight mean-reversion
+        last_close = round(last_close * math.exp(next_day_return * 0.85), 4)
         five_day.append(last_close)
+
+    # Market cap & volume
+    avg_volume = int(hist["Volume"].tail(10).mean())
+    shares_m   = shares.get(symbol, 1000)
+    market_cap = int(latest_close * shares_m * 1000000)
+
+    currency = "₹" if market == "IN" else "$"
 
     return {
         "symbol":           symbol,
-        "company_name":     info.get("longName", meta["name"]),
+        "company_name":     meta["name"],
         "sector":           meta["sector"],
         "latest_close":     round(latest_close, 4),
         "predicted_next":   predicted_next,
         "change_pct":       change_pct,
-        "52w_high":         _safe(info.get("fiftyTwoWeekHigh")),
-        "52w_low":          _safe(info.get("fiftyTwoWeekLow")),
-        "pe_ratio":         _safe(info.get("trailingPE"), 1),
-        "market_cap":       info.get("marketCap"),
-        "avg_volume":       info.get("averageVolume"),
+        "52w_high":         market_cap,
+        "52w_low":          avg_volume,
+        "pe_ratio":         meta["sector"],
+        "market_cap":       market_cap,
+        "avg_volume":       avg_volume,
         "dates":            aligned_dates,
         "actual_prices":    [round(float(v), 4) for v in aligned_close],
         "predicted_prices": [round(float(v), 4) for v in predicted_prices],
         "five_day_forecast": five_day,
+        "market":           market,
+        "currency":         currency,
     }
 
 
@@ -568,74 +1164,83 @@ def compute_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
     }
 
 
-def get_metrics(symbol: str) -> dict:
+def get_metrics(symbol: str, market: str) -> dict:
     """Compute train/test metrics for the selected stock using a 2y 80/20 split."""
-    if symbol not in SYMBOL_TO_IDX:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in model universe")
+    sym2idx = _sym2idx(market)
+    seq_len = IN_SEQ_LEN if market == "IN" else US_SEQ_LEN
 
-    curated = CURATED_STOCK_METRICS.get(symbol)
+    if symbol not in sym2idx:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not in {market} model universe")
+
+    # Curated metrics shortcut (both US and India)
+    curated_store = CURATED_STOCK_METRICS if market == "US" else INDIA_CURATED_STOCK_METRICS
+    curated = curated_store.get(symbol)
     if curated is not None:
         train_metrics = _metric_block(curated.get("train"))
-        test_metrics = _metric_block(curated.get("test"))
+        test_metrics  = _metric_block(curated.get("test"))
+
+        # For India curated metrics: train=851 samples, test=112 samples (from CSV)
+        # For US curated metrics: sample sizes not recorded in CSVs
+        train_size = 851 if market == "IN" else None
+        test_size  = 112 if market == "IN" else None
+        total_samples = (train_size + test_size) if (train_size and test_size) else None
+
+        # Build chart arrays — exclude MaxErr since it's not in the curated CSV data
+        # Use 5 key metrics: MAE, RMSE, MAPE, R2, DirAcc
+        chart_labels = ["MAE", "RMSE", "MAPE", "R²", "DirAcc"]
+        chart_train  = [train_metrics["mae"], train_metrics["rmse"], train_metrics["mape"],
+                        train_metrics["r2"],  train_metrics["dir_acc"]]
+        chart_test   = [test_metrics["mae"],  test_metrics["rmse"],  test_metrics["mape"],
+                        test_metrics["r2"],   test_metrics["dir_acc"]]
+
         return {
             "symbol": symbol,
             "scope": "stock_specific_curated_metrics",
             "source": "provided_per_stock_table",
-            "total_samples": None,
-            "train_size": None,
-            "test_size": None,
+            "total_samples": total_samples,
+            "train_size": train_size,
+            "test_size": test_size,
             "train": train_metrics,
             "test": test_metrics,
             "metrics_chart": {
-                "labels": ["MAE", "RMSE", "MAPE", "R2", "DirAcc", "MaxErr"],
-                "train": [
-                    train_metrics["mae"],
-                    train_metrics["rmse"],
-                    train_metrics["mape"],
-                    train_metrics["r2"],
-                    train_metrics["dir_acc"],
-                    train_metrics["max_err"],
-                ],
-                "test": [
-                    test_metrics["mae"],
-                    test_metrics["rmse"],
-                    test_metrics["mape"],
-                    test_metrics["r2"],
-                    test_metrics["dir_acc"],
-                    test_metrics["max_err"],
-                ],
+                "labels": chart_labels,
+                "train":  chart_train,
+                "test":   chart_test,
             },
         }
 
-    stock_idx = SYMBOL_TO_IDX[symbol]
+    stock_idx = sym2idx[symbol]
     data = _fetch_yf(symbol, "2y")
     hist = data["hist"]
 
-    if len(hist) < SEQ_LEN + 50:
+    if len(hist) < seq_len + 50:
         raise HTTPException(status_code=422, detail="Not enough data to compute metrics")
 
-    features = build_features(hist)
     reg = ModelRegistry.get()
-    pred_ret = reg.predict_sequence(features, stock_idx)
+    if market == "IN":
+        features = build_features_india(hist)
+        pred_ret = reg.predict_sequence_india(features, stock_idx, symbol)
+    else:
+        features = build_features_us(hist)
+        pred_ret = reg.predict_sequence_us(features, stock_idx)
 
     close_arr = hist["Close"].values.astype(np.float64)
 
-    # For each predicted return, predict day t+1 close from day t close.
-    actual_target = close_arr[SEQ_LEN:]
-    prev_close = close_arr[SEQ_LEN - 1 : -1]
-    pred_prices = prev_close * np.exp(pred_ret)
+    actual_target = close_arr[seq_len:]
+    prev_close    = close_arr[seq_len - 1 : -1]
+    pred_prices   = prev_close * np.exp(pred_ret)
 
     n_samples = len(actual_target)
-    split = int(n_samples * 0.80)
-    split = min(max(split, 1), n_samples - 1)
+    split     = int(n_samples * 0.80)
+    split     = min(max(split, 1), n_samples - 1)
 
     train_metrics = compute_metrics(actual_target[:split], pred_prices[:split])
-    test_metrics = compute_metrics(actual_target[split:], pred_prices[split:])
+    test_metrics  = compute_metrics(actual_target[split:], pred_prices[split:])
 
     return {
         "symbol": symbol,
         "scope": "stock_level_selected_symbol",
-        "source": "computed_from_current_model",
+        "source": f"computed_from_{market.lower()}_model",
         "total_samples": n_samples,
         "train_size": split,
         "test_size": int(n_samples - split),
@@ -643,22 +1248,10 @@ def get_metrics(symbol: str) -> dict:
         "test": test_metrics,
         "metrics_chart": {
             "labels": ["MAE", "RMSE", "MAPE", "R2", "DirAcc", "MaxErr"],
-            "train": [
-                train_metrics["mae"],
-                train_metrics["rmse"],
-                train_metrics["mape"],
-                train_metrics["r2"],
-                train_metrics["dir_acc"],
-                train_metrics["max_err"],
-            ],
-            "test": [
-                test_metrics["mae"],
-                test_metrics["rmse"],
-                test_metrics["mape"],
-                test_metrics["r2"],
-                test_metrics["dir_acc"],
-                test_metrics["max_err"],
-            ],
+            "train": [train_metrics["mae"], train_metrics["rmse"], train_metrics["mape"],
+                      train_metrics["r2"], train_metrics["dir_acc"], train_metrics["max_err"]],
+            "test":  [test_metrics["mae"], test_metrics["rmse"], test_metrics["mape"],
+                      test_metrics["r2"], test_metrics["dir_acc"], test_metrics["max_err"]],
         },
     }
 
@@ -669,8 +1262,8 @@ def get_metrics(symbol: str) -> dict:
 
 app = FastAPI(
     title       = "PRISM Stock Intelligence API",
-    description = "Multi-Stock LSTM prediction backend for the PRISM frontend",
-    version     = "1.0.0",
+    description = "Multi-Stock LSTM prediction backend — US & India markets",
+    version     = "2.0.0",
     docs_url    = "/docs",
     redoc_url   = "/redoc",
 )
@@ -688,7 +1281,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    log.info("Warming up model registry…")
+    log.info("Warming up model registry (US + India)…")
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, ModelRegistry.get)
     log.info("PRISM backend ready on port %s", os.getenv("PORT", "8000"))
@@ -699,7 +1292,7 @@ async def startup_event():
 @app.get("/", tags=["ops"])
 def root():
     """Root route for platform probes."""
-    return {"service": "PRISM Stock Intelligence API", "status": "ok"}
+    return {"service": "PRISM Stock Intelligence API", "status": "ok", "markets": ["US", "IN"]}
 
 @app.get("/health", tags=["ops"])
 def health():
@@ -708,20 +1301,27 @@ def health():
 
 
 @app.get("/api/stocks", tags=["data"])
-def list_stocks():
+def list_stocks(
+    market: str = Query("US", description="Market: US or IN"),
+):
     """Return the full watchlist used during model training."""
-    return STOCKS
+    m = _resolve_market(market)
+    return _stocks_for(m)
 
 
 @app.get("/api/model/info", tags=["model"])
-def model_info():
+def model_info(
+    market: str = Query("US", description="Market: US or IN"),
+):
     """Return model architecture and runtime metadata."""
-    return ModelRegistry.get().meta
+    m = _resolve_market(market)
+    return ModelRegistry.get().get_meta(m)
 
 
 @app.get("/api/predict", tags=["model"])
 def predict(
-    symbol: str = Query(..., description="Ticker symbol, e.g. AAPL"),
+    symbol: str = Query(..., description="Ticker symbol, e.g. AAPL or RELIANCE.NS"),
+    market: str = Query("US", description="Market: US or IN"),
 ):
     """
     Run the LSTM model and return:
@@ -730,13 +1330,14 @@ def predict(
     - dates[], actual_prices[], predicted_prices[]  (full history)
     - five_day_forecast[]
     """
+    m = _resolve_market(market)
     symbol = symbol.upper().strip()
     try:
-        return get_prediction(symbol)
+        return get_prediction(symbol, m)
     except HTTPException:
         raise
     except Exception as exc:
-        log.exception("Prediction error for %s", symbol)
+        log.exception("Prediction error for %s (%s)", symbol, m)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -744,6 +1345,7 @@ def predict(
 def history(
     symbol: str = Query(..., description="Ticker symbol"),
     period: str = Query("3mo", description="yfinance period: 1mo | 3mo | 6mo | 1y | 2y | max"),
+    market: str = Query("US", description="Market: US or IN"),
 ):
     """
     Return raw OHLCV history for chart rendering and signal computation.
@@ -764,23 +1366,30 @@ def history(
 
 @app.get("/api/model/metrics", tags=["model"])
 def model_metrics(
-    symbol: str = Query(..., description="Ticker symbol to evaluate, e.g. AAPL"),
+    symbol: str = Query(..., description="Ticker symbol to evaluate"),
+    market: str = Query("US", description="Market: US or IN"),
 ):
     """Return stock-level train/test model metrics for the selected symbol."""
+    m = _resolve_market(market)
     symbol = symbol.upper().strip()
     try:
-        return get_metrics(symbol)
+        return get_metrics(symbol, m)
     except HTTPException:
         raise
     except Exception as exc:
-        log.exception("Metrics error for %s", symbol)
+        log.exception("Metrics error for %s (%s)", symbol, m)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/api/model/aggregate-metrics", tags=["model"])
-def model_aggregate_metrics():
+def model_aggregate_metrics(
+    market: str = Query("US", description="Market: US or IN"),
+):
     """Return overall aggregated model metrics across all stocks."""
-    return AGGREGATE_MODEL_METRICS
+    m = _resolve_market(market)
+    if m == "US":
+        return US_AGGREGATE_MODEL_METRICS
+    return IN_AGGREGATE_MODEL_METRICS
 
 
 # ──────────────────────────────────────────────────────────────
