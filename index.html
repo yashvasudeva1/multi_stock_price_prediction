@@ -150,51 +150,6 @@
       flex-shrink: 0;
     }
 
-    /* ── Market Toggle ─────────────────────────────────────── */
-    .market-toggle {
-      display: flex;
-      align-items: center;
-      gap: 0;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 2px;
-      position: relative;
-    }
-
-    .market-toggle-btn {
-      position: relative;
-      z-index: 2;
-      padding: 6px 14px;
-      border: none;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      cursor: pointer;
-      transition: color 0.25s;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .market-toggle-btn.active {
-      color: var(--text);
-      background: var(--border);
-    }
-
-    .market-toggle-btn .flag {
-      font-size: 1rem;
-      line-height: 1;
-    }
-
-    .market-toggle-btn:hover:not(.active) {
-      color: var(--text);
-    }
-
     .model-badge {
       display: flex;
       align-items: center;
@@ -247,19 +202,6 @@
       text-transform: uppercase;
       color: var(--muted);
       border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .sidebar-header .market-label {
-      font-size: 0.6rem;
-      padding: 2px 6px;
-      background: var(--accent);
-      color: var(--bg);
-      border-radius: 3px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
     }
 
     .search-box {
@@ -912,28 +854,16 @@
       </div>
 
       <div class="topbar-right">
-        <!-- Market Toggle -->
-        <div class="market-toggle" id="market-toggle">
-          <button class="market-toggle-btn active" id="toggle-us" onclick="switchMarket('US')">
-            <span class="flag">🇺🇸</span> US
-          </button>
-          <button class="market-toggle-btn" id="toggle-in" onclick="switchMarket('IN')">
-            <span class="flag">🇮🇳</span> India
-          </button>
-        </div>
         <div class="model-badge" id="model-badge">
           <div class="dot"></div>
-          <span id="model-badge-text">US Model Loaded</span>
+          <span>LSTM Model Loaded</span>
         </div>
       </div>
     </header>
 
     <!-- ── Sidebar ────────────────────────────────────────── -->
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <span>Watchlist · <span id="stock-count">0</span> stocks</span>
-        <span class="market-label" id="sidebar-market-label">US</span>
-      </div>
+      <div class="sidebar-header">Watchlist · <span id="stock-count">0</span> stocks</div>
       <input class="search-box" id="search-box" placeholder="Search symbol…" oninput="filterStocks(this.value)" />
       <div class="stock-list" id="stock-list"></div>
     </aside>
@@ -1039,20 +969,20 @@
       <!-- Info strip -->
       <div class="info-strip">
         <div class="info-pill">
+          <div class="info-pill-label">Market Cap</div>
+          <div class="info-pill-value" id="info-mktcap">—</div>
+        </div>
+        <div class="info-pill">
+          <div class="info-pill-label">Avg. Daily Volume</div>
+          <div class="info-pill-value" id="info-vol">—</div>
+        </div>
+        <div class="info-pill">
           <div class="info-pill-label">Selected Symbol</div>
           <div class="info-pill-value" id="info-sym">—</div>
         </div>
         <div class="info-pill">
           <div class="info-pill-label">Model Status</div>
           <div class="info-pill-value" id="info-model" style="color:var(--green)">Pre-trained ✓</div>
-        </div>
-        <div class="info-pill">
-          <div class="info-pill-label">Market</div>
-          <div class="info-pill-value" id="info-market">US</div>
-        </div>
-        <div class="info-pill">
-          <div class="info-pill-label">Currency</div>
-          <div class="info-pill-value" id="info-currency">USD ($)</div>
         </div>
       </div>
 
@@ -1090,7 +1020,7 @@
           <div class="metric-row"><span class="metric-key">Stock Embeddings</span><span class="metric-val">Yes</span>
           </div>
           <div class="metric-row"><span class="metric-key">Model File</span><span class="metric-val"
-              style="font-size:0.65rem" id="m-file">aapl_multi_stock_lstm.pth</span></div>
+              style="font-size:0.65rem">aapl_multi_stock_lstm.pth</span></div>
           <div class="metric-row"><span class="metric-key">Status</span><span class="metric-val"
               style="color:var(--green)">Loaded ✓</span></div>
         </div>
@@ -1181,64 +1111,6 @@
     let currentSymbol = null;
     let currentPeriod = "3mo";
     let latestPrediction = null;
-    let currentMarket = "US";
-    let currencySymbol = "$";
-
-    // ── Market Toggle ────────────────────────────────────────────
-    async function switchMarket(market) {
-      if (market === currentMarket) return;
-
-      currentMarket = market;
-      currencySymbol = market === "IN" ? "₹" : "$";
-
-      // Update toggle UI
-      document.getElementById("toggle-us").classList.toggle("active", market === "US");
-      document.getElementById("toggle-in").classList.toggle("active", market === "IN");
-      document.getElementById("sidebar-market-label").textContent = market === "IN" ? "INDIA" : "US";
-      document.getElementById("model-badge-text").textContent = market === "IN" ? "India Model Loaded" : "US Model Loaded";
-      document.getElementById("info-market").textContent = market === "IN" ? "India (NSE)" : "US";
-      document.getElementById("info-currency").textContent = market === "IN" ? "INR (₹)" : "USD ($)";
-
-      // Reset state
-      currentSymbol = null;
-      latestPrediction = null;
-      metricsData = null;
-
-      // Reset KPIs
-      document.getElementById("kpi-current").textContent = "—";
-      document.getElementById("kpi-predicted").textContent = "—";
-      document.getElementById("kpi-name").textContent = "Select a stock";
-      document.getElementById("kpi-pe").textContent = "—";
-      document.getElementById("kpi-ipo").textContent = "—";
-      document.getElementById("kpi-badge").innerHTML = "";
-      document.getElementById("info-sym").textContent = "—";
-      document.getElementById("chart-title").textContent = "Price Chart";
-      document.getElementById("price-empty").style.display = "flex";
-      document.getElementById("price-empty-text").textContent = "Select a stock to show prediction";
-      document.getElementById("price-empty-symbol").textContent = "—";
-      document.getElementById("forecast-list").innerHTML = '<p style="color:var(--muted);font-size:0.75rem">Select a stock to view forecasts.</p>';
-      document.getElementById("sig-rsi").textContent = "—";
-      document.getElementById("sig-macd").textContent = "—";
-      document.getElementById("sig-bb").textContent = "—";
-      document.getElementById("sig-vol").textContent = "—";
-      document.getElementById("metrics-split-info").innerHTML = '<span style="font-size:0.72rem;color:var(--muted)">Select a stock to compute metrics.</span>';
-      document.getElementById("metrics-empty").style.display = "flex";
-      document.getElementById("metrics-empty").textContent = "Select a stock to render evaluation chart.";
-      document.getElementById("metrics-chart-wrap").style.display = "none";
-
-      // Destroy charts
-      if (priceChart) { priceChart.destroy(); priceChart = null; }
-      if (volChart) { volChart.destroy(); volChart = null; }
-      if (metricsChart) { metricsChart.destroy(); metricsChart = null; }
-
-      // Reload everything for new market
-      showOverlay("Switching to " + (market === "IN" ? "India" : "US") + " market…");
-      await loadStocks();
-      buildTickerStrip();
-      loadModelInfo();
-      loadAggregateMetrics();
-      hideOverlay();
-    }
 
 
     // ── Metrics ───────────────────────────────────────────────
@@ -1249,7 +1121,7 @@
     async function loadAggregateMetrics() {
       try {
         const tableWrap = document.getElementById('aggregate-table-wrap');
-        const r = await fetch(`${API}/model/aggregate-metrics?market=${currentMarket}`);
+        const r = await fetch(`${API}/model/aggregate-metrics`);
         const d = await r.json();
         document.getElementById('aggregate-meta').innerHTML = `
       <span class="split-pill">Scope <b>${d.scope || 'aggregate'}</b></span>
@@ -1260,28 +1132,14 @@
         const rows = Array.isArray(d.rows) ? d.rows : [];
         if (!rows.length) {
           tableWrap.className = 'aggregate-wrap agg-empty';
-          tableWrap.textContent = 'No aggregate metrics available for this market.';
+          tableWrap.textContent = 'No aggregate metrics available.';
           return;
         }
 
-        // Detect if train data exists (India model has null train)
-        const hasTrain = rows.some(row => row.train !== null && row.train !== undefined);
-        const hasDiff  = rows.some(row => row.difference !== null && row.difference !== undefined);
-
         const body = rows.map(row => {
-          const trainCell = (row.train !== null && row.train !== undefined)
-            ? Number(row.train).toFixed(6)
-            : '—';
-          const testCell = (row.test !== null && row.test !== undefined)
-            ? Number(row.test).toFixed(6)
-            : '—';
-          let diffCell = '—';
-          let diffClass = '';
-          if (row.difference !== null && row.difference !== undefined) {
-            const diff = Number(row.difference);
-            diffClass = diff < 0 ? 'agg-diff-neg' : 'agg-diff-pos';
-            diffCell = `${diff >= 0 ? '+' : ''}${diff.toFixed(6)}`;
-          }
+          const diff = Number(row.difference);
+          const diffClass = diff < 0 ? 'agg-diff-neg' : 'agg-diff-pos';
+          const diffText = `${diff >= 0 ? '+' : ''}${diff.toFixed(6)}`;
           return `<tr>
         <td>${row.metric}</td>
         ${hasTrain ? `<td>${trainCell}</td>` : ''}
@@ -1314,19 +1172,13 @@
 
     async function loadMetrics(symbol) {
       try {
-        const r = await fetch(`${API}/model/metrics?symbol=${encodeURIComponent(symbol)}&market=${currentMarket}`);
+        const r = await fetch(`${API}/model/metrics?symbol=${symbol}`);
         metricsData = await r.json();
-
-        // Determine which tab to default to: if train data is all null, default to 'test'
-        const trainBlock = metricsData.train || {};
-        const trainHasData = Object.values(trainBlock).some(v => v !== null && v !== undefined);
-        activeMetricsTab = trainHasData ? 'train' : 'test';
-
+        activeMetricsTab = 'train';
         document.querySelectorAll('.metrics-tab').forEach((t, i) => {
-          const isTrainTab = (i === 0);
-          t.classList.toggle('active', isTrainTab ? activeMetricsTab === 'train' : activeMetricsTab === 'test');
+          t.classList.toggle('active', i === 0);
         });
-        renderMetrics(metricsData, activeMetricsTab);
+        renderMetrics(metricsData, 'train');
       } catch (e) { console.error("Metrics load failed:", e); }
     }
 
@@ -1346,18 +1198,17 @@
 
     function renderMetrics(d, tab) {
       const m = d[tab];  // train or test
-      const cur = currentMarket === "IN" ? "₹" : "$";
       const fmt = (value, digits = 4, suffix = '') => {
         if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
         return `${Number(value).toFixed(digits)}${suffix}`;
       };
       const cards = [
-        { id: 'm-mae', key: 'mae', val: fmt(m.mae), sub: `Mean Abs Error (${cur})` },
+        { id: 'm-mae', key: 'mae', val: fmt(m.mae), sub: 'Mean Abs Error ($)' },
         { id: 'm-rmse', key: 'rmse', val: fmt(m.rmse), sub: 'Root Mean Sq Error' },
         { id: 'm-mape', key: 'mape', val: fmt(m.mape, 4, '%'), sub: 'Mean Abs % Error' },
         { id: 'm-r2', key: 'r2', val: fmt(m.r2), sub: 'Coeff of Det.' },
         { id: 'm-diracc', key: 'dir_acc', val: fmt(m.dir_acc, 4, '%'), sub: 'Up/Down Accuracy' },
-        { id: 'm-maxerr', key: 'max_err', val: fmt(m.max_err), sub: `Worst-case Error (${cur})` },
+        { id: 'm-maxerr', key: 'max_err', val: fmt(m.max_err), sub: 'Worst-case Error' },
       ];
       const grid = document.getElementById('metrics-grid');
       grid.innerHTML = cards.map(c => {
@@ -1382,24 +1233,13 @@
 
       // Chart — grouped bars for train vs test across all metrics
       const labels = d.metrics_chart?.labels || ['MAE', 'RMSE', 'MAPE', 'R2', 'DirAcc', 'MaxErr'];
-      const rawTrainVals = d.metrics_chart?.train || [d.train?.mae, d.train?.rmse, d.train?.mape, d.train?.r2, d.train?.dir_acc, d.train?.max_err];
-      const rawTestVals = d.metrics_chart?.test || [d.test?.mae, d.test?.rmse, d.test?.mape, d.test?.r2, d.test?.dir_acc, d.test?.max_err];
-
-      // Check if train/test have real data (not all null)
-      const trainHasValues = Array.isArray(rawTrainVals) && rawTrainVals.some(v => v !== null && v !== undefined);
-      const testHasValues = Array.isArray(rawTestVals) && rawTestVals.some(v => v !== null && v !== undefined);
-      const showChart = trainHasValues || testHasValues;
+      const trainVals = d.metrics_chart?.train || [m.mae, m.rmse, m.mape, m.r2, m.dir_acc, m.max_err];
+      const testVals = d.metrics_chart?.test || [d.test.mae, d.test.rmse, d.test.mape, d.test.r2, d.test.dir_acc, d.test.max_err];
+      const showChart = Array.isArray(trainVals) && Array.isArray(testVals) && trainVals.length === labels.length && testVals.length === labels.length;
 
       document.getElementById('metrics-empty').style.display = showChart ? 'none' : 'flex';
       document.getElementById('metrics-chart-wrap').style.display = showChart ? 'block' : 'none';
-
-      if (trainHasValues && testHasValues) {
-        document.getElementById('metrics-chart-label').textContent = 'Train vs Test — Metrics Comparison';
-      } else if (testHasValues) {
-        document.getElementById('metrics-chart-label').textContent = 'Test Metrics — Per-Metric Breakdown';
-      } else {
-        document.getElementById('metrics-chart-label').textContent = 'Metrics Comparison';
-      }
+      document.getElementById('metrics-chart-label').textContent = 'Train vs Test — Metrics Comparison';
 
       if (!showChart) {
         document.getElementById('metrics-empty').textContent = 'Unable to render metrics comparison chart for this stock.';
@@ -1410,38 +1250,35 @@
         return;
       }
 
-      // Build datasets array — only include datasets with real data
-      const datasets = [];
-      if (trainHasValues) {
-        datasets.push({
-          label: 'Train',
-          data: rawTrainVals.map(v => (v !== null && v !== undefined) ? v : 0),
-          borderColor: 'rgba(91,156,246,0.9)',
-          backgroundColor: 'rgba(91,156,246,0.35)',
-          borderWidth: 1.2,
-          borderRadius: 4,
-          barPercentage: 0.9,
-          categoryPercentage: 0.72,
-        });
-      }
-      if (testHasValues) {
-        datasets.push({
-          label: 'Test',
-          data: rawTestVals.map(v => (v !== null && v !== undefined) ? v : 0),
-          borderColor: 'rgba(226,201,126,0.9)',
-          backgroundColor: 'rgba(226,201,126,0.35)',
-          borderWidth: 1.2,
-          borderRadius: 4,
-          barPercentage: 0.9,
-          categoryPercentage: 0.72,
-        });
-      }
-
       const ctx = document.getElementById('metrics-chart').getContext('2d');
       if (metricsChart) metricsChart.destroy();
       metricsChart = new Chart(ctx, {
         type: 'bar',
-        data: { labels, datasets },
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Train',
+              data: trainVals,
+              borderColor: 'rgba(91,156,246,0.9)',
+              backgroundColor: 'rgba(91,156,246,0.35)',
+              borderWidth: 1.2,
+              borderRadius: 4,
+              barPercentage: 0.9,
+              categoryPercentage: 0.72,
+            },
+            {
+              label: 'Test',
+              data: testVals,
+              borderColor: 'rgba(226,201,126,0.9)',
+              backgroundColor: 'rgba(226,201,126,0.35)',
+              borderWidth: 1.2,
+              borderRadius: 4,
+              barPercentage: 0.9,
+              categoryPercentage: 0.72,
+            }
+          ]
+        },
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
@@ -1496,7 +1333,7 @@
 
     async function loadStocks() {
       try {
-        const r = await fetch(`${API}/stocks?market=${currentMarket}`);
+        const r = await fetch(`${API}/stocks`);
         stocks = await r.json();
         document.getElementById("stock-count").textContent = stocks.length;
         renderStockList(stocks);
@@ -1507,7 +1344,7 @@
 
     async function loadModelInfo() {
       try {
-        const r = await fetch(`${API}/model/info?market=${currentMarket}`);
+        const r = await fetch(`${API}/model/info`);
         const d = await r.json();
         document.getElementById("m-hidden").textContent = d.architecture?.hidden ?? "—";
         document.getElementById("m-layers").textContent = d.architecture?.n_layers ?? "—";
@@ -1516,7 +1353,6 @@
         document.getElementById("m-feat").textContent = d.architecture?.n_feat ?? d.features?.length ?? "—";
         document.getElementById("m-seq").textContent = d.seq_len ?? "—";
         document.getElementById("m-stocks").textContent = d.n_stocks ?? "—";
-        document.getElementById("m-file").textContent = d.model_file ?? "—";
       } catch (e) {
         console.error("Model info unavailable:", e);
       }
@@ -1525,7 +1361,7 @@
     function renderStockList(list) {
       const el = document.getElementById("stock-list");
       el.innerHTML = list.map(s => `
-    <div class="stock-item ${currentSymbol === s.symbol ? 'active' : ''}" onclick="selectStock('${s.symbol.replace(/&/g, '&amp;')}')">
+    <div class="stock-item ${currentSymbol === s.symbol ? 'active' : ''}" onclick="selectStock('${s.symbol}')">
       <div>
         <div class="stock-sym">${s.symbol}</div>
         <div class="stock-name-small">${s.name}</div>
@@ -1553,8 +1389,6 @@
 
     // ── Stock select ──────────────────────────────────────────
     async function selectStock(symbol) {
-      // Unescape HTML entities that might be in the onclick
-      symbol = symbol.replace(/&amp;/g, '&');
       currentSymbol = symbol;
       renderStockList(stocks);
       document.getElementById("info-sym").textContent = symbol;
@@ -1567,86 +1401,19 @@
       loadMetrics(symbol);
     }
 
-    // ── US IPO & Sector data ─────────────────────────────────
-    const US_SYMBOL_SECTORS = {
-      "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Technology",
-      "AMZN": "Consumer", "NVDA": "Technology", "META": "Technology",
-      "TSLA": "Automotive", "BRK-B": "Finance", "JPM": "Finance",
-      "V": "Finance", "JNJ": "Healthcare", "WMT": "Consumer",
-      "PG": "Consumer", "MA": "Finance", "HD": "Retail",
-      "CVX": "Energy", "MRK": "Healthcare", "ABBV": "Healthcare",
-      "PFE": "Healthcare", "BAC": "Finance", "KO": "Consumer",
-      "PEP": "Consumer", "COST": "Retail", "AVGO": "Technology",
-      "CSCO": "Technology", "ADBE": "Technology", "CRM": "Technology",
-      "NFLX": "Media", "INTC": "Technology", "AMD": "Technology",
-      "UNH": "Healthcare", "XOM": "Energy", "LLY": "Healthcare", "MCD": "Consumer"
-    };
-
-    const US_SYMBOL_IPO = {
-      "AAPL": "Dec 12, 1980", "MSFT": "Mar 13, 1986", "GOOGL": "Aug 19, 2004",
-      "AMZN": "May 15, 1997", "NVDA": "Jan 22, 1999", "META": "May 18, 2012",
-      "TSLA": "Jun 29, 2010", "BRK-B": "May 9, 1996", "JPM": "1969",
-      "V": "Mar 19, 2008", "JNJ": "1944", "WMT": "Aug 25, 1972",
-      "PG": "1890", "MA": "May 25, 2006", "HD": "Sep 22, 1981",
-      "CVX": "1911", "MRK": "1946", "ABBV": "Jan 2, 2013",
-      "PFE": "Jun 22, 1942", "BAC": "1978", "KO": "1919",
-      "PEP": "1919", "COST": "Dec 5, 1985", "AVGO": "Aug 6, 2009",
-      "CSCO": "Feb 16, 1990", "ADBE": "Aug 11, 1986", "CRM": "Jun 23, 2004",
-      "NFLX": "May 23, 2002", "INTC": "Oct 13, 1971", "AMD": "Sep 1972",
-      "UNH": "Oct 1984", "XOM": "1911", "LLY": "1952", "MCD": "Apr 21, 1965"
-    };
-
-    // ── India IPO & Sector data ──────────────────────────────
-    const IN_SYMBOL_SECTORS = {
-      "RELIANCE.NS": "Energy", "TCS.NS": "IT", "HDFCBANK.NS": "Banking",
-      "BHARTIARTL.NS": "Telecom", "ICICIBANK.NS": "Banking", "SBIN.NS": "Banking",
-      "INFY.NS": "IT", "HINDUNILVR.NS": "FMCG", "ITC.NS": "FMCG",
-      "LT.NS": "Infra", "BAJFINANCE.NS": "Finance", "SUNPHARMA.NS": "Pharma",
-      "MARUTI.NS": "Auto", "HCLTECH.NS": "IT", "ADANIENT.NS": "Conglom.",
-      "TITAN.NS": "Consumer", "TATASTEEL.NS": "Metals", "NTPC.NS": "Energy",
-      "ASIANPAINT.NS": "Consumer", "KOTAKBANK.NS": "Banking", "M&M.NS": "Auto",
-      "ADANIPORTS.NS": "Infra", "AXISBANK.NS": "Banking", "ONGC.NS": "Energy",
-      "ULTRACEMCO.NS": "Cement", "POWERGRID.NS": "Energy", "COALINDIA.NS": "Mining",
-      "WIPRO.NS": "IT", "BAJAJFINSV.NS": "Finance"
-    };
-
-    const IN_SYMBOL_IPO = {
-      "RELIANCE.NS": "1977", "TCS.NS": "Aug 2004", "HDFCBANK.NS": "1995",
-      "BHARTIARTL.NS": "Feb 2002", "ICICIBANK.NS": "Sep 1997", "SBIN.NS": "1955",
-      "INFY.NS": "Feb 1993", "HINDUNILVR.NS": "1956", "ITC.NS": "1970",
-      "LT.NS": "1963", "BAJFINANCE.NS": "Mar 2007", "SUNPHARMA.NS": "1994",
-      "MARUTI.NS": "Jul 2003", "HCLTECH.NS": "Jan 2000", "ADANIENT.NS": "Jun 1994",
-      "TITAN.NS": "1993", "TATASTEEL.NS": "1988", "NTPC.NS": "Oct 2004",
-      "ASIANPAINT.NS": "1982", "KOTAKBANK.NS": "Dec 2003", "M&M.NS": "1956",
-      "ADANIPORTS.NS": "Nov 2007", "AXISBANK.NS": "Nov 1998", "ONGC.NS": "2003",
-      "ULTRACEMCO.NS": "2004", "POWERGRID.NS": "Oct 2007", "COALINDIA.NS": "Nov 2010",
-      "WIPRO.NS": "1946", "BAJAJFINSV.NS": "May 2007"
-    };
-
-    function getSymbolSector(symbol) {
-      if (currentMarket === "IN") return IN_SYMBOL_SECTORS[symbol] || "Unknown";
-      return US_SYMBOL_SECTORS[symbol] || "Unknown";
-    }
-
-    function getSymbolIPO(symbol) {
-      if (currentMarket === "IN") return IN_SYMBOL_IPO[symbol] || "Unknown";
-      return US_SYMBOL_IPO[symbol] || "Unknown";
-    }
-
     async function loadPrediction(symbol) {
       try {
-        const r = await fetch(`${API}/predict?symbol=${encodeURIComponent(symbol)}&market=${currentMarket}`);
+        const r = await fetch(`${API}/predict?symbol=${symbol}`);
         const d = await r.json();
         if (d.error) { console.error(d.error); hideOverlay(); return; }
 
-        const cur = d.currency || currencySymbol;
-
         // KPIs
         document.getElementById("kpi-name").textContent = d.company_name;
-        document.getElementById("kpi-current").textContent = cur + d.latest_close.toFixed(2);
-        document.getElementById("kpi-predicted").textContent = cur + d.predicted_next.toFixed(2);
-        document.getElementById("kpi-ipo").textContent = getSymbolIPO(symbol);
-        document.getElementById("kpi-pe").textContent = getSymbolSector(symbol);
+        document.getElementById("kpi-current").textContent = "$" + d.latest_close.toFixed(2);
+        document.getElementById("kpi-predicted").textContent = "$" + d.predicted_next.toFixed(2);
+        document.getElementById("kpi-52h").textContent = d["52w_high"] ? "$" + d["52w_high"].toFixed(2) : "—";
+        document.getElementById("kpi-52l").textContent = d["52w_low"] ? "$" + d["52w_low"].toFixed(2) : "—";
+        document.getElementById("kpi-pe").textContent = d.pe_ratio ? d.pe_ratio.toFixed(1) : "—";
 
         const pct = d.change_pct;
         const badgeEl = document.getElementById("kpi-badge");
@@ -1671,13 +1438,13 @@
 
     async function loadHistory(symbol, period, volOnly = false) {
       try {
-        const r = await fetch(`${API}/history?symbol=${encodeURIComponent(symbol)}&period=${period}&market=${currentMarket}`);
+        const r = await fetch(`${API}/history?symbol=${symbol}&period=${period}`);
         const d = await r.json();
         if (!volOnly) {
           drawPriceChart(d.dates, d.close, null);
           document.getElementById("price-empty").style.display = "none";
           const last = d.close[d.close.length - 1];
-          document.getElementById("kpi-current").textContent = currencySymbol + last.toFixed(2);
+          document.getElementById("kpi-current").textContent = "$" + last.toFixed(2);
         }
         drawVolChart(d.dates, d.volume);
         updateSignals(d);
@@ -1738,7 +1505,6 @@
     // ── Charts ────────────────────────────────────────────────
     function drawPriceChart(dates, actual, predicted) {
       const ctx = document.getElementById("price-chart").getContext("2d");
-      const cur = currencySymbol;
 
       // Reduce density for large datasets
       const maxPts = currentPeriod === "2y" ? 504 : 120;
@@ -1800,7 +1566,7 @@
               titleFont: { family: "'JetBrains Mono'" },
               bodyFont: { family: "'JetBrains Mono'" },
               callbacks: {
-                label: ctx => ` ${ctx.dataset.label}: ${cur}${ctx.parsed.y.toFixed(2)}`
+                label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}`
               }
             }
           },
@@ -1818,7 +1584,7 @@
               ticks: {
                 color: "#6b7280",
                 font: { family: "'JetBrains Mono'", size: 10 },
-                callback: v => cur + v.toFixed(0),
+                callback: v => "$" + v.toFixed(0),
               }
             }
           }
@@ -1875,7 +1641,6 @@
 
     function drawForecast(prices, base) {
       const el = document.getElementById("forecast-list");
-      const cur = currencySymbol;
       const days = ["Tomorrow", "Day +2", "Day +3", "Day +4", "Day +5"];
       el.innerHTML = prices.map((price, i) => {
         const prev = i === 0 ? base : prices[i - 1];
@@ -1884,7 +1649,7 @@
         return `
       <div class="forecast-item">
         <span class="f-day">${days[i]}</span>
-        <span class="f-price">${cur}${price.toFixed(2)}</span>
+        <span class="f-price">$${price.toFixed(2)}</span>
         <span class="f-chg" style="color:var(--${cls})">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>
       </div>
     `;
