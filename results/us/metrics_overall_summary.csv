@@ -1,0 +1,4 @@
+Split,N_stocks,MAE_price_mean,MAE_price_std,MAE_price_median,RMSE_price_mean,RMSE_price_std,RMSE_price_median,MAPE_pct_mean,MAPE_pct_std,MAPE_pct_median,R2_mean,R2_std,R2_median,DirAcc_pct_mean,DirAcc_pct_std,DirAcc_pct_median,MAE_logret_mean,MAE_logret_std,MAE_logret_median,DirAcc_best_pct,DirAcc_worst_pct,N_stocks_above_50pct_DirAcc,N_stocks_above_52pct_DirAcc
+train,30,2.7991,2.5228,1.9078,3.9341,3.4824,2.8288,1.3476,0.5995,1.1465,0.9892,0.0142,0.994,54.0228,1.8827,54.6189,0.0135,0.006,0.0115,57.39,50.35,30,26
+val,30,3.5934,3.1194,2.4862,4.9886,4.4859,3.3193,1.1957,0.5161,1.0309,0.9217,0.0621,0.94,53.0981,3.4904,52.9412,0.012,0.0052,0.0103,59.66,44.54,26,22
+test,30,4.9133,5.1233,3.2416,6.5755,6.7097,4.4123,1.3793,0.6084,1.1566,0.9183,0.0591,0.9247,53.8725,4.5942,53.4783,0.0138,0.0061,0.0116,64.0,46.96,24,19
