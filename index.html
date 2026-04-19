@@ -1175,7 +1175,7 @@
   </div>
 
   <script>
-    const API = "https://multi-stock-price-prediction.onrender.com/api";
+    const API = "http://localhost:5050/api";
     let stocks = [];
     let priceChart = null, volChart = null;
     let currentSymbol = null;
@@ -1266,7 +1266,7 @@
 
         // Detect if train data exists (India model has null train)
         const hasTrain = rows.some(row => row.train !== null && row.train !== undefined);
-        const hasDiff  = rows.some(row => row.difference !== null && row.difference !== undefined);
+        const hasDiff = rows.some(row => row.difference !== null && row.difference !== undefined);
 
         const body = rows.map(row => {
           const trainCell = (row.train !== null && row.train !== undefined)
@@ -1569,31 +1569,29 @@
 
     // ── US IPO & Sector data ─────────────────────────────────
     const US_SYMBOL_SECTORS = {
-      "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Technology",
-      "AMZN": "Consumer", "NVDA": "Technology", "META": "Technology",
-      "TSLA": "Automotive", "BRK-B": "Finance", "JPM": "Finance",
-      "V": "Finance", "JNJ": "Healthcare", "WMT": "Consumer",
-      "PG": "Consumer", "MA": "Finance", "HD": "Retail",
-      "CVX": "Energy", "MRK": "Healthcare", "ABBV": "Healthcare",
-      "PFE": "Healthcare", "BAC": "Finance", "KO": "Consumer",
-      "PEP": "Consumer", "COST": "Retail", "AVGO": "Technology",
-      "CSCO": "Technology", "ADBE": "Technology", "CRM": "Technology",
-      "NFLX": "Media", "INTC": "Technology", "AMD": "Technology",
-      "UNH": "Healthcare", "XOM": "Energy", "LLY": "Healthcare", "MCD": "Consumer"
+      "AAPL": "Technology", "NVDA": "Technology", "MSFT": "Technology",
+      "GOOGL": "Technology", "AMZN": "Consumer", "META": "Technology",
+      "TSLA": "Automotive", "AMD": "Technology", "TSM": "Technology",
+      "AVGO": "Technology", "INTC": "Technology", "ASML": "Technology",
+      "ARM": "Technology", "JPM": "Finance", "GS": "Finance",
+      "V": "Finance", "MA": "Finance", "PYPL": "Finance",
+      "JNJ": "Healthcare", "PFE": "Healthcare", "UNH": "Healthcare",
+      "LLY": "Healthcare", "PG": "Consumer", "KO": "Consumer",
+      "PEP": "Consumer", "COST": "Retail", "WMT": "Consumer",
+      "XOM": "Energy", "CVX": "Energy", "BRK-B": "Finance"
     };
 
     const US_SYMBOL_IPO = {
-      "AAPL": "Dec 12, 1980", "MSFT": "Mar 13, 1986", "GOOGL": "Aug 19, 2004",
-      "AMZN": "May 15, 1997", "NVDA": "Jan 22, 1999", "META": "May 18, 2012",
-      "TSLA": "Jun 29, 2010", "BRK-B": "May 9, 1996", "JPM": "1969",
-      "V": "Mar 19, 2008", "JNJ": "1944", "WMT": "Aug 25, 1972",
-      "PG": "1890", "MA": "May 25, 2006", "HD": "Sep 22, 1981",
-      "CVX": "1911", "MRK": "1946", "ABBV": "Jan 2, 2013",
-      "PFE": "Jun 22, 1942", "BAC": "1978", "KO": "1919",
-      "PEP": "1919", "COST": "Dec 5, 1985", "AVGO": "Aug 6, 2009",
-      "CSCO": "Feb 16, 1990", "ADBE": "Aug 11, 1986", "CRM": "Jun 23, 2004",
-      "NFLX": "May 23, 2002", "INTC": "Oct 13, 1971", "AMD": "Sep 1972",
-      "UNH": "Oct 1984", "XOM": "1911", "LLY": "1952", "MCD": "Apr 21, 1965"
+      "AAPL": "Dec 12, 1980", "NVDA": "Jan 22, 1999", "MSFT": "Mar 13, 1986",
+      "GOOGL": "Aug 19, 2004", "AMZN": "May 15, 1997", "META": "May 18, 2012",
+      "TSLA": "Jun 29, 2010", "AMD": "Sep 1972", "TSM": "Oct 8, 1997",
+      "AVGO": "Aug 6, 2009", "INTC": "Oct 13, 1971", "ASML": "1995",
+      "ARM": "Sep 14, 2023", "JPM": "1969", "GS": "May 4, 1999",
+      "V": "Mar 19, 2008", "MA": "May 25, 2006", "PYPL": "Jul 20, 2015",
+      "JNJ": "1944", "PFE": "Jun 22, 1942", "UNH": "Oct 1984",
+      "LLY": "1952", "PG": "1890", "KO": "1919",
+      "PEP": "1919", "COST": "Dec 5, 1985", "WMT": "Aug 25, 1972",
+      "XOM": "1911", "CVX": "1911", "BRK-B": "May 9, 1996"
     };
 
     // ── India IPO & Sector data ──────────────────────────────
@@ -1658,7 +1656,7 @@
         renderPredictionForPeriod(d);
 
         // Forecast
-        drawForecast(d.five_day_forecast, d.latest_close);
+        drawForecast(d.five_day_forecast, d.latest_close, d.five_day_details);
 
         // Hide empty state
         document.getElementById("price-empty").style.display = "none";
@@ -1873,13 +1871,19 @@
       });
     }
 
-    function drawForecast(prices, base) {
+    function drawForecast(prices, base, details) {
       const el = document.getElementById("forecast-list");
       const cur = currencySymbol;
       const days = ["Tomorrow", "Day +2", "Day +3", "Day +4", "Day +5"];
       el.innerHTML = prices.map((price, i) => {
-        const prev = i === 0 ? base : prices[i - 1];
-        const chg = ((price - prev) / prev * 100);
+        // Use autoregressive per-day change_pct from details if available,
+        // otherwise compute from base price
+        let chg;
+        if (details && details[i] && details[i].change_pct !== undefined) {
+          chg = details[i].change_pct;
+        } else {
+          chg = ((price - base) / base * 100);
+        }
         const cls = chg >= 0 ? "up" : "dn";
         return `
       <div class="forecast-item">

@@ -42,7 +42,7 @@ from sklearn.preprocessing import RobustScaler
 # Config
 # ──────────────────────────────────────────────────────────────
 
-US_MODEL_PATH    = Path(os.getenv("US_MODEL_PATH", "aapl_multi_stock_lstm.pth"))
+US_MODEL_PATH    = Path(os.getenv("US_MODEL_PATH", "us_stock_lstm.pth"))
 INDIA_MODEL_PATH = Path(os.getenv("INDIA_MODEL_PATH", "multi_stock_lstm_v2.pth"))
 DEVICE           = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -75,35 +75,35 @@ log = logging.getLogger("prism")
 
 US_STOCKS: list[dict[str, str]] = [
     {"symbol": "AAPL",  "name": "Apple Inc.",                "sector": "Technology"},
+    {"symbol": "NVDA",  "name": "NVIDIA Corporation",         "sector": "Technology"},
     {"symbol": "MSFT",  "name": "Microsoft Corporation",     "sector": "Technology"},
     {"symbol": "GOOGL", "name": "Alphabet Inc.",              "sector": "Technology"},
     {"symbol": "AMZN",  "name": "Amazon.com Inc.",            "sector": "Consumer"},
-    {"symbol": "NVDA",  "name": "NVIDIA Corporation",         "sector": "Technology"},
     {"symbol": "META",  "name": "Meta Platforms Inc.",        "sector": "Technology"},
     {"symbol": "TSLA",  "name": "Tesla Inc.",                 "sector": "Automotive"},
-    {"symbol": "BRK-B", "name": "Berkshire Hathaway",         "sector": "Finance"},
+    {"symbol": "AMD",   "name": "Advanced Micro Devices",     "sector": "Technology"},
+    {"symbol": "TSM",   "name": "Taiwan Semiconductor",       "sector": "Technology"},
+    {"symbol": "AVGO",  "name": "Broadcom Inc.",              "sector": "Technology"},
+    {"symbol": "INTC",  "name": "Intel Corporation",          "sector": "Technology"},
+    {"symbol": "ASML",  "name": "ASML Holding",               "sector": "Technology"},
+    {"symbol": "ARM",   "name": "Arm Holdings",               "sector": "Technology"},
     {"symbol": "JPM",   "name": "JPMorgan Chase & Co.",       "sector": "Finance"},
+    {"symbol": "GS",    "name": "Goldman Sachs Group",        "sector": "Finance"},
     {"symbol": "V",     "name": "Visa Inc.",                  "sector": "Finance"},
-    {"symbol": "JNJ",   "name": "Johnson & Johnson",          "sector": "Healthcare"},
-    {"symbol": "WMT",   "name": "Walmart Inc.",               "sector": "Consumer"},
-    {"symbol": "PG",    "name": "Procter & Gamble Co.",       "sector": "Consumer"},
     {"symbol": "MA",    "name": "Mastercard Inc.",            "sector": "Finance"},
-    {"symbol": "HD",    "name": "Home Depot Inc.",            "sector": "Retail"},
-    {"symbol": "CVX",   "name": "Chevron Corporation",        "sector": "Energy"},
-    {"symbol": "MRK",   "name": "Merck & Co. Inc.",           "sector": "Healthcare"},
-    {"symbol": "ABBV",  "name": "AbbVie Inc.",                "sector": "Healthcare"},
+    {"symbol": "PYPL",  "name": "PayPal Holdings",            "sector": "Finance"},
+    {"symbol": "JNJ",   "name": "Johnson & Johnson",          "sector": "Healthcare"},
     {"symbol": "PFE",   "name": "Pfizer Inc.",                "sector": "Healthcare"},
-    {"symbol": "BAC",   "name": "Bank of America Corp.",      "sector": "Finance"},
+    {"symbol": "UNH",   "name": "UnitedHealth Group",         "sector": "Healthcare"},
+    {"symbol": "LLY",   "name": "Eli Lilly and Company",      "sector": "Healthcare"},
+    {"symbol": "PG",    "name": "Procter & Gamble Co.",       "sector": "Consumer"},
     {"symbol": "KO",    "name": "Coca-Cola Company",          "sector": "Consumer"},
     {"symbol": "PEP",   "name": "PepsiCo Inc.",               "sector": "Consumer"},
     {"symbol": "COST",  "name": "Costco Wholesale Corp.",     "sector": "Retail"},
-    {"symbol": "AVGO",  "name": "Broadcom Inc.",              "sector": "Technology"},
-    {"symbol": "CSCO",  "name": "Cisco Systems Inc.",         "sector": "Technology"},
-    {"symbol": "ADBE",  "name": "Adobe Inc.",                 "sector": "Technology"},
-    {"symbol": "CRM",   "name": "Salesforce Inc.",            "sector": "Technology"},
-    {"symbol": "NFLX",  "name": "Netflix Inc.",               "sector": "Media"},
-    {"symbol": "INTC",  "name": "Intel Corporation",          "sector": "Technology"},
-    {"symbol": "AMD",   "name": "Advanced Micro Devices",     "sector": "Technology"},
+    {"symbol": "WMT",   "name": "Walmart Inc.",               "sector": "Consumer"},
+    {"symbol": "XOM",   "name": "Exxon Mobil Corporation",    "sector": "Energy"},
+    {"symbol": "CVX",   "name": "Chevron Corporation",        "sector": "Energy"},
+    {"symbol": "BRK-B", "name": "Berkshire Hathaway",         "sector": "Finance"},
 ]
 
 US_SYMBOL_TO_IDX  = {s["symbol"]: i for i, s in enumerate(US_STOCKS)}
@@ -153,36 +153,36 @@ IN_SYMBOL_TO_META = {s["symbol"]: s for s in INDIA_STOCKS}
 # ──────────────────────────────────────────────────────────────
 
 CURATED_STOCK_METRICS: dict[str, dict[str, dict[str, float] | None]] = {
-    "AAPL":  {"train": {"mae": 2.1128, "rmse": 2.8409, "mape": 1.2451, "r2": 0.9911, "dir_acc": 53.0023}, "test": {"mae": 2.4469, "rmse": 3.4620, "mape": 0.9260, "r2": 0.8649, "dir_acc": 51.3043}},
-    "MSFT":  {"train": {"mae": 3.9405, "rmse": 5.2465, "mape": 1.2611, "r2": 0.9941, "dir_acc": 51.5012}, "test": {"mae": 5.4825, "rmse": 7.9643, "mape": 1.2388, "r2": 0.9741, "dir_acc": 43.4783}},
-    "NVDA":  {"train": {"mae": 1.3436, "rmse": 2.3409, "mape": 2.5903, "r2": 0.9969, "dir_acc": 53.2333}, "test": {"mae": 3.3625, "rmse": 4.2357, "mape": 1.8234, "r2": 0.6723, "dir_acc": 52.1739}},
-    "AMZN":  {"train": {"mae": 2.3596, "rmse": 3.2212, "mape": 1.6664, "r2": 0.9920, "dir_acc": 51.1547}, "test": {"mae": 3.5010, "rmse": 4.7469, "mape": 1.5560, "r2": 0.8820, "dir_acc": 55.6522}},
-    "GOOGL": {"train": {"mae": 1.8988, "rmse": 2.5897, "mape": 1.4611, "r2": 0.9910, "dir_acc": 53.1178}, "test": {"mae": 4.2076, "rmse": 5.4138, "mape": 1.3898, "r2": 0.9140, "dir_acc": 50.4348}},
-    "META":  {"train": {"mae": 5.4428, "rmse": 8.3642, "mape": 1.8867, "r2": 0.9969, "dir_acc": 52.1940}, "test": {"mae": 10.8139, "rmse": 16.2508, "mape": 1.6939, "r2": 0.8268, "dir_acc": 49.5652}},
-    "TSLA":  {"train": {"mae": 6.9907, "rmse": 9.8656, "mape": 2.8038, "r2": 0.9789, "dir_acc": 52.3095}, "test": {"mae": 8.7707, "rmse": 10.9868, "mape": 2.0715, "r2": 0.8908, "dir_acc": 49.5652}},
-    "BRK-B": {"train": {"mae": 2.7492, "rmse": 3.6508, "mape": 0.8026, "r2": 0.9964, "dir_acc": 53.0023}, "test": {"mae": 3.6128, "rmse": 4.9757, "mape": 0.7349, "r2": 0.7745, "dir_acc": 46.9565}},
-    "JPM":   {"train": {"mae": 1.5948, "rmse": 2.3122, "mape": 1.0915, "r2": 0.9964, "dir_acc": 53.1178}, "test": {"mae": 3.5019, "rmse": 4.7498, "mape": 1.1476, "r2": 0.8324, "dir_acc": 53.9130}},
-    "V":     {"train": {"mae": 2.2903, "rmse": 3.1665, "mape": 1.0124, "r2": 0.9919, "dir_acc": 54.2725}, "test": {"mae": 3.1392, "rmse": 4.5378, "mape": 0.9629, "r2": 0.9169, "dir_acc": 46.0870}},
-    "UNH":   {"train": {"mae": 5.1661, "rmse": 7.3746, "mape": 1.0804, "r2": 0.9717, "dir_acc": 52.7714}, "test": {"mae": 5.3272, "rmse": 8.8183, "mape": 1.7415, "r2": 0.8940, "dir_acc": 46.9565}},
-    "XOM":   {"train": {"mae": 1.1383, "rmse": 1.4909, "mape": 1.2896, "r2": 0.9936, "dir_acc": 52.8868}, "test": {"mae": 1.7511, "rmse": 2.3212, "mape": 1.2762, "r2": 0.9841, "dir_acc": 56.5217}},
-    "LLY":   {"train": {"mae": 6.4487, "rmse": 10.2638, "mape": 1.2880, "r2": 0.9980, "dir_acc": 53.5797}, "test": {"mae": 16.6246, "rmse": 22.9732, "mape": 1.6568, "r2": 0.9011, "dir_acc": 51.3043}},
-    "JNJ":   {"train": {"mae": 1.1352, "rmse": 1.5419, "mape": 0.7603, "r2": 0.9473, "dir_acc": 49.4226}, "test": {"mae": 1.7300, "rmse": 2.2414, "mape": 0.7923, "r2": 0.9881, "dir_acc": 53.9130}},
-    "MA":    {"train": {"mae": 4.0502, "rmse": 5.5452, "mape": 1.0854, "r2": 0.9924, "dir_acc": 53.2333}, "test": {"mae": 5.7397, "rmse": 7.7904, "mape": 1.0815, "r2": 0.9096, "dir_acc": 46.0870}},
-    "PG":    {"train": {"mae": 1.1194, "rmse": 1.5426, "mape": 0.7918, "r2": 0.9856, "dir_acc": 53.5797}, "test": {"mae": 1.4801, "rmse": 1.8566, "mape": 0.9933, "r2": 0.9254, "dir_acc": 46.9565}},
-    "HD":    {"train": {"mae": 3.4956, "rmse": 4.6836, "mape": 1.1373, "r2": 0.9873, "dir_acc": 52.8868}, "test": {"mae": 4.4666, "rmse": 5.7911, "mape": 1.2606, "r2": 0.9106, "dir_acc": 49.5652}},
-    "MRK":   {"train": {"mae": 0.8713, "rmse": 1.2598, "mape": 0.9416, "r2": 0.9943, "dir_acc": 52.0785}, "test": {"mae": 1.2845, "rmse": 1.7052, "mape": 1.2100, "r2": 0.9793, "dir_acc": 54.7826}},
-    "AVGO":  {"train": {"mae": 1.7886, "rmse": 3.5031, "mape": 1.7839, "r2": 0.9950, "dir_acc": 52.4249}, "test": {"mae": 7.3340, "rmse": 10.1847, "mape": 2.1291, "r2": 0.8050, "dir_acc": 52.1739}},
-    "CVX":   {"train": {"mae": 1.5797, "rmse": 2.1689, "mape": 1.1711, "r2": 0.9861, "dir_acc": 54.8499}, "test": {"mae": 1.8731, "rmse": 2.5664, "mape": 1.0985, "r2": 0.9838, "dir_acc": 55.6522}},
-    "ABBV":  {"train": {"mae": 1.3574, "rmse": 2.0486, "mape": 0.9688, "r2": 0.9923, "dir_acc": 54.3880}, "test": {"mae": 2.7281, "rmse": 3.6880, "mape": 1.2321, "r2": 0.7522, "dir_acc": 48.6957}},
-    "COST":  {"train": {"mae": 6.0795, "rmse": 8.5494, "mape": 1.0453, "r2": 0.9973, "dir_acc": 54.7344}, "test": {"mae": 8.8522, "rmse": 11.4343, "mape": 0.9360, "r2": 0.9485, "dir_acc": 47.8261}},
-    "PEP":   {"train": {"mae": 1.2012, "rmse": 1.6421, "mape": 0.7801, "r2": 0.9696, "dir_acc": 51.6166}, "test": {"mae": 1.5009, "rmse": 1.9367, "mape": 0.9883, "r2": 0.9517, "dir_acc": 48.6957}},
-    "KO":    {"train": {"mae": 0.4013, "rmse": 0.5510, "mape": 0.7195, "r2": 0.9857, "dir_acc": 53.3487}, "test": {"mae": 0.5865, "rmse": 0.7514, "mape": 0.8003, "r2": 0.9632, "dir_acc": 52.1739}},
-    "BAC":   {"train": {"mae": 0.4234, "rmse": 0.5764, "mape": 1.2578, "r2": 0.9900, "dir_acc": 48.9607}, "test": {"mae": 0.5651, "rmse": 0.7444, "mape": 1.0888, "r2": 0.9126, "dir_acc": 57.3913}},
-    "WMT":   {"train": {"mae": 0.4602, "rmse": 0.6757, "mape": 0.8634, "r2": 0.9976, "dir_acc": 55.5427}, "test": {"mae": 1.4022, "rmse": 1.8685, "mape": 1.1858, "r2": 0.9562, "dir_acc": 52.1739}},
-    "ADBE":  {"train": {"mae": 7.7277, "rmse": 11.3746, "mape": 1.6549, "r2": 0.9870, "dir_acc": 49.8845}, "test": {"mae": 4.5228, "rmse": 6.4123, "mape": 1.5445, "r2": 0.9746, "dir_acc": 46.9565}},
-    "CRM":   {"train": {"mae": 3.5600, "rmse": 5.2903, "mape": 1.6433, "r2": 0.9907, "dir_acc": 51.2702}, "test": {"mae": 3.8145, "rmse": 5.2145, "mape": 1.7746, "r2": 0.9700, "dir_acc": 46.0870}},
-    "MCD":   {"train": {"mae": 1.9795, "rmse": 2.6592, "mape": 0.7949, "r2": 0.9862, "dir_acc": 51.9630}, "test": {"mae": 2.6221, "rmse": 3.3595, "mape": 0.8427, "r2": 0.9029, "dir_acc": 47.8261}},
-    "NFLX":  {"train": {"mae": 0.7955, "rmse": 1.2220, "mape": 1.9114, "r2": 0.9960, "dir_acc": 50.5774}, "test": None},
+    "AAPL":  {"train": {"mae": 1.943, "rmse": 2.5518, "mape": 1.1415, "r2": 0.9929, "dir_acc": 53.0023}, "test": {"mae": 2.3244, "rmse": 3.1462, "mape": 0.8795, "r2": 0.892, "dir_acc": 53.913}},
+    "NVDA":  {"train": {"mae": 1.2292, "rmse": 2.1348, "mape": 2.3383, "r2": 0.9975, "dir_acc": 54.8499}, "test": {"mae": 2.9525, "rmse": 3.8428, "mape": 1.6005, "r2": 0.7454, "dir_acc": 53.0435}},
+    "MSFT":  {"train": {"mae": 3.5993, "rmse": 4.7006, "mape": 1.1516, "r2": 0.9953, "dir_acc": 53.1178}, "test": {"mae": 4.8612, "rmse": 7.1751, "mape": 1.1138, "r2": 0.9774, "dir_acc": 52.1739}},
+    "GOOGL": {"train": {"mae": 1.8088, "rmse": 2.4018, "mape": 1.382, "r2": 0.9924, "dir_acc": 50.3464}, "test": {"mae": 3.6724, "rmse": 4.6926, "mape": 1.1994, "r2": 0.9226, "dir_acc": 54.7826}},
+    "AMZN":  {"train": {"mae": 2.1629, "rmse": 2.8772, "mape": 1.5178, "r2": 0.9938, "dir_acc": 52.4249}, "test": {"mae": 3.1879, "rmse": 4.0866, "mape": 1.4073, "r2": 0.922, "dir_acc": 58.2609}},
+    "META":  {"train": {"mae": 5.0354, "rmse": 7.5048, "mape": 1.7395, "r2": 0.9976, "dir_acc": 54.0416}, "test": {"mae": 9.6095, "rmse": 12.8642, "mape": 1.5147, "r2": 0.8651, "dir_acc": 51.3043}},
+    "TSLA":  {"train": {"mae": 6.3984, "rmse": 8.8186, "mape": 2.548, "r2": 0.9836, "dir_acc": 55.6582}, "test": {"mae": 7.8603, "rmse": 9.7998, "mape": 1.8788, "r2": 0.9199, "dir_acc": 54.7826}},
+    "AMD":   {"train": {"mae": 2.6285, "rmse": 3.5127, "mape": 2.2477, "r2": 0.9888, "dir_acc": 51.2702}, "test": {"mae": 5.3323, "rmse": 7.4986, "mape": 2.4282, "r2": 0.8604, "dir_acc": 57.3913}},
+    "TSM":   {"train": {"mae": 1.8726, "rmse": 2.7964, "mape": 1.5899, "r2": 0.9948, "dir_acc": 52.4249}, "test": {"mae": 5.2723, "rmse": 6.9179, "mape": 1.6001, "r2": 0.9498, "dir_acc": 53.913}},
+    "AVGO":  {"train": {"mae": 1.7521, "rmse": 3.3791, "mape": 1.6856, "r2": 0.9955, "dir_acc": 51.1547}, "test": {"mae": 6.6815, "rmse": 9.2189, "mape": 1.9359, "r2": 0.8629, "dir_acc": 47.8261}},
+    "INTC":  {"train": {"mae": 0.5707, "rmse": 0.7987, "mape": 1.727, "r2": 0.9922, "dir_acc": 52.0785}, "test": {"mae": 1.2868, "rmse": 1.7993, "mape": 2.8802, "r2": 0.9323, "dir_acc": 60.8696}},
+    "ASML":  {"train": {"mae": 12.4736, "rmse": 16.9094, "mape": 1.8372, "r2": 0.987, "dir_acc": 52.4249}, "test": {"mae": 24.8624, "rmse": 32.132, "mape": 1.9592, "r2": 0.9644, "dir_acc": 51.3043}},
+    "ARM":   {"train": {"mae": 3.9336, "rmse": 5.5107, "mape": 3.0017, "r2": 0.9292, "dir_acc": 52.5547}, "test": {"mae": 4.4167, "rmse": 6.1209, "mape": 3.0347, "r2": 0.7965, "dir_acc": 64.0}},
+    "JPM":   {"train": {"mae": 1.4499, "rmse": 2.0743, "mape": 0.9819, "r2": 0.9972, "dir_acc": 55.7737}, "test": {"mae": 3.2667, "rmse": 4.3421, "mape": 1.0684, "r2": 0.8617, "dir_acc": 53.0435}},
+    "GS":    {"train": {"mae": 4.0145, "rmse": 5.5819, "mape": 1.1091, "r2": 0.9957, "dir_acc": 54.9654}, "test": {"mae": 11.9179, "rmse": 15.8609, "mape": 1.3677, "r2": 0.9223, "dir_acc": 47.8261}},
+    "V":     {"train": {"mae": 2.085, "rmse": 2.8264, "mape": 0.9197, "r2": 0.9939, "dir_acc": 55.5427}, "test": {"mae": 3.0407, "rmse": 4.0834, "mape": 0.9347, "r2": 0.9312, "dir_acc": 53.0435}},
+    "MA":    {"train": {"mae": 3.76, "rmse": 4.9826, "mape": 1.0011, "r2": 0.9941, "dir_acc": 52.6559}, "test": {"mae": 5.4297, "rmse": 7.0216, "mape": 1.0239, "r2": 0.9245, "dir_acc": 46.9565}},
+    "PYPL":  {"train": {"mae": 1.7201, "rmse": 2.8311, "mape": 1.8139, "r2": 0.9971, "dir_acc": 51.8476}, "test": {"mae": 0.8297, "rmse": 1.2349, "mape": 1.65, "r2": 0.9791, "dir_acc": 51.3043}},
+    "JNJ":   {"train": {"mae": 1.0329, "rmse": 1.381, "mape": 0.6925, "r2": 0.9577, "dir_acc": 54.8499}, "test": {"mae": 1.4834, "rmse": 1.9416, "mape": 0.6707, "r2": 0.9904, "dir_acc": 62.6087}},
+    "PFE":   {"train": {"mae": 0.3567, "rmse": 0.4997, "mape": 1.0733, "r2": 0.9951, "dir_acc": 54.7344}, "test": {"mae": 0.2696, "rmse": 0.3454, "mape": 1.0355, "r2": 0.925, "dir_acc": 46.9565}},
+    "UNH":   {"train": {"mae": 4.7436, "rmse": 6.5973, "mape": 0.9891, "r2": 0.977, "dir_acc": 52.3095}, "test": {"mae": 4.8885, "rmse": 7.968, "mape": 1.5955, "r2": 0.9006, "dir_acc": 51.3043}},
+    "LLY":   {"train": {"mae": 5.9943, "rmse": 9.186, "mape": 1.1793, "r2": 0.9984, "dir_acc": 56.582}, "test": {"mae": 15.0015, "rmse": 20.335, "mape": 1.4917, "r2": 0.8992, "dir_acc": 53.913}},
+    "PG":    {"train": {"mae": 1.0068, "rmse": 1.3719, "mape": 0.7111, "r2": 0.9887, "dir_acc": 55.5427}, "test": {"mae": 1.3636, "rmse": 1.6733, "mape": 0.9164, "r2": 0.9406, "dir_acc": 48.6957}},
+    "KO":    {"train": {"mae": 0.3661, "rmse": 0.4935, "mape": 0.6561, "r2": 0.9884, "dir_acc": 56.4665}, "test": {"mae": 0.5248, "rmse": 0.6582, "mape": 0.7141, "r2": 0.9714, "dir_acc": 56.5217}},
+    "PEP":   {"train": {"mae": 1.1078, "rmse": 1.4906, "mape": 0.72, "r2": 0.9747, "dir_acc": 54.5035}, "test": {"mae": 1.2538, "rmse": 1.6294, "mape": 0.8227, "r2": 0.9668, "dir_acc": 55.6522}},
+    "COST":  {"train": {"mae": 5.5898, "rmse": 7.6789, "mape": 0.9595, "r2": 0.9979, "dir_acc": 55.5427}, "test": {"mae": 8.0903, "rmse": 10.3379, "mape": 0.8522, "r2": 0.9597, "dir_acc": 49.5652}},
+    "WMT":   {"train": {"mae": 0.4204, "rmse": 0.6083, "mape": 0.7883, "r2": 0.9982, "dir_acc": 54.8499}, "test": {"mae": 1.2519, "rmse": 1.6814, "mape": 1.0506, "r2": 0.963, "dir_acc": 51.3043}},
+    "XOM":   {"train": {"mae": 1.0237, "rmse": 1.337, "mape": 1.1519, "r2": 0.9947, "dir_acc": 55.0808}, "test": {"mae": 1.5381, "rmse": 2.0698, "mape": 1.1078, "r2": 0.9871, "dir_acc": 57.3913}},
+    "CVX":   {"train": {"mae": 1.427, "rmse": 1.9173, "mape": 1.0539, "r2": 0.9886, "dir_acc": 56.6975}, "test": {"mae": 1.7108, "rmse": 2.3058, "mape": 0.9916, "r2": 0.9869, "dir_acc": 62.6087}},
+    "BRK-B": {"train": {"mae": 2.4655, "rmse": 3.269, "mape": 0.7186, "r2": 0.9971, "dir_acc": 57.3903}, "test": {"mae": 3.2165, "rmse": 4.4825, "mape": 0.6539, "r2": 0.8298, "dir_acc": 53.913}},
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -312,14 +312,14 @@ INDIA_CURATED_STOCK_METRICS: dict[str, dict[str, dict[str, float] | None]] = {
 
 US_AGGREGATE_MODEL_METRICS: dict[str, Any] = {
     "scope": "aggregate_all_stocks",
-    "source": "provided_aggregate_summary",
+    "source": "metrics_overall_summary_csv",
     "market": "US",
     "rows": [
-        {"metric": "MAE", "train": 2.716726, "test": 4.148920, "difference": 1.432194},
-        {"metric": "RMSE", "train": 3.918751, "test": 5.701946, "difference": 1.783196},
-        {"metric": "MAPE", "train": 1.292997, "test": 1.289340, "difference": -0.003657},
-        {"metric": "R2", "train": 0.988981, "test": 0.904052, "difference": -0.084929},
-        {"metric": "DirAcc", "train": 52.563510, "test": 50.289855, "difference": -2.273655},
+        {"metric": "MAE", "train": 2.7991, "test": 4.9133, "difference": round(4.9133 - 2.7991, 4)},
+        {"metric": "RMSE", "train": 3.9341, "test": 6.5755, "difference": round(6.5755 - 3.9341, 4)},
+        {"metric": "MAPE", "train": 1.3476, "test": 1.3793, "difference": round(1.3793 - 1.3476, 4)},
+        {"metric": "R2", "train": 0.9892, "test": 0.9183, "difference": round(0.9183 - 0.9892, 4)},
+        {"metric": "DirAcc", "train": 54.0228, "test": 53.8725, "difference": round(53.8725 - 54.0228, 4)},
     ],
 }
 
@@ -353,13 +353,12 @@ def _metric_block(raw: dict[str, float] | None) -> dict[str, float | None]:
 
 # Shares outstanding (approximate, millions) for market-cap calc
 US_SHARES_OUT_M = {
-    "AAPL": 15340, "MSFT": 7430, "GOOGL": 12380, "AMZN": 10390, "NVDA": 24600,
-    "META": 2540, "TSLA": 3180, "BRK-B": 2160, "JPM": 2870, "V": 2040,
-    "JNJ": 2400, "WMT": 8040, "PG": 2350, "MA": 930, "HD": 990,
-    "CVX": 1840, "MRK": 2530, "ABBV": 1760, "PFE": 5640, "BAC": 7870,
-    "KO": 4300, "PEP": 1370, "COST": 440, "AVGO": 4650, "CSCO": 4010,
-    "ADBE": 450, "CRM": 970, "NFLX": 430, "INTC": 4220, "AMD": 1610,
-    "UNH": 920, "XOM": 3950, "LLY": 900, "MCD": 720,
+    "AAPL": 15340, "NVDA": 24600, "MSFT": 7430, "GOOGL": 12380, "AMZN": 10390,
+    "META": 2540, "TSLA": 3180, "AMD": 1610, "TSM": 5180, "AVGO": 4650,
+    "INTC": 4220, "ASML": 394, "ARM": 1030, "JPM": 2870, "GS": 330,
+    "V": 2040, "MA": 930, "PYPL": 1060, "JNJ": 2400, "PFE": 5640,
+    "UNH": 920, "LLY": 900, "PG": 2350, "KO": 4300, "PEP": 1370,
+    "COST": 440, "WMT": 8040, "XOM": 3950, "CVX": 1840, "BRK-B": 2160,
 }
 
 IN_SHARES_OUT_M = {
@@ -1019,6 +1018,162 @@ class ModelRegistry:
 
 
 # ──────────────────────────────────────────────────────────────
+# Inference-only feature engineering (no target shift / dropna)
+# ──────────────────────────────────────────────────────────────
+
+def build_features_us_inference(df) -> np.ndarray:
+    """Same 26 columns as build_features_us but keeps the last row intact
+    (no target = lr.shift(-1), no dropna on a missing target)."""
+    return build_features_us(df)
+
+
+def build_features_india_inference(df) -> np.ndarray:
+    """Same 33 columns as build_features_india but keeps the last row intact."""
+    return build_features_india(df)
+
+
+# ──────────────────────────────────────────────────────────────
+# Synthetic bar builder
+# ──────────────────────────────────────────────────────────────
+
+def _make_synthetic_bar(
+    predicted_close: float,
+    recent_df: pd.DataFrame,
+    atr_decay: float = 0.85,
+) -> dict:
+    """
+    Build a plausible OHLCV row from a predicted close price.
+    - Open  = previous close
+    - High  = max(Open, predicted_close) + ATR-fraction
+    - Low   = min(Open, predicted_close) - ATR-fraction
+    - Volume= rolling 10-day average
+    ATR estimate decays with atr_decay weight to stay anchored to the
+    real regime as synthetic bars accumulate.
+    """
+    prev_close = float(recent_df["Close"].iloc[-1])
+    open_price = prev_close
+
+    # Estimate recent ATR
+    highs  = recent_df["High"].values[-14:].astype(np.float64)
+    lows   = recent_df["Low"].values[-14:].astype(np.float64)
+    closes = recent_df["Close"].values[-14:].astype(np.float64)
+    tr_arr = np.maximum(
+        highs - lows,
+        np.maximum(
+            np.abs(highs - np.roll(closes, 1)),
+            np.abs(lows - np.roll(closes, 1)),
+        ),
+    )
+    atr_est = float(np.nanmean(tr_arr[1:])) * atr_decay + \
+              float(np.abs(predicted_close - prev_close)) * (1 - atr_decay)
+    atr_est = max(atr_est, abs(predicted_close - open_price) * 0.1)  # floor
+
+    high_price = max(open_price, predicted_close) + atr_est * 0.3
+    low_price  = min(open_price, predicted_close) - atr_est * 0.3
+    low_price  = max(low_price, 0.01)  # never negative
+
+    avg_vol = int(recent_df["Volume"].tail(10).mean())
+
+    return {
+        "Open":   open_price,
+        "High":   high_price,
+        "Low":    low_price,
+        "Close":  predicted_close,
+        "Volume": avg_vol,
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+# Autoregressive Forecaster
+# ──────────────────────────────────────────────────────────────
+
+class AutoregressiveForecaster:
+    """
+    Owns a sliding buffer of OHLCV history and calls the inference
+    feature builder fresh on every step so every rolling indicator
+    (RSI, MACD, Bollinger, ATR, OBV) is recomputed from the updated
+    history rather than held static.
+    """
+
+    def __init__(
+        self,
+        hist_df: pd.DataFrame,
+        market: str,
+        stock_idx: int,
+        symbol: str,
+    ):
+        self.buffer    = hist_df.copy()
+        self.market    = market
+        self.stock_idx = stock_idx
+        self.symbol    = symbol
+        self.reg       = ModelRegistry.get()
+        self.seq_len   = IN_SEQ_LEN if market == "IN" else US_SEQ_LEN
+
+    def _predict_one_step(self) -> float:
+        """Run feature engineering on the current buffer and predict next-day return."""
+        if self.market == "IN":
+            features = build_features_india_inference(self.buffer)
+        else:
+            features = build_features_us_inference(self.buffer)
+
+        # Fit scaler on the full feature history
+        reg = self.reg
+        if self.market == "IN" and self.symbol in reg.in_scalers:
+            scaler = reg.in_scalers[self.symbol]
+            scaled = scaler.transform(features)
+        else:
+            scaler = RobustScaler()
+            scaled = scaler.fit_transform(features)
+
+        # Take the last seq_len window
+        window = scaled[-self.seq_len:]
+        x_t = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+        sid = torch.tensor([self.stock_idx], dtype=torch.long).to(DEVICE)
+
+        model = reg.in_model if self.market == "IN" else reg.us_model
+        with torch.no_grad():
+            ret = model(x_t, sid).item()
+        return ret
+
+    def _append_bar(self, bar: dict) -> None:
+        """Append a synthetic OHLCV row to the buffer."""
+        last_date = self.buffer.index[-1]
+        # Next business day (skip weekends)
+        next_date = last_date + pd.tseries.offsets.BDay(1)
+        new_row = pd.DataFrame(bar, index=[next_date])
+        new_row.index.name = self.buffer.index.name
+        self.buffer = pd.concat([self.buffer, new_row])
+
+    def forecast(self, n_days: int) -> list[dict]:
+        """
+        Autoregressively forecast n_days into the future.
+        Returns list of {"price": float, "return": float, "change_pct": float}
+        where change_pct is relative to the original (real) latest close.
+        """
+        base_close = float(self.buffer["Close"].iloc[-1])
+        results = []
+
+        for step in range(n_days):
+            pred_ret   = self._predict_one_step()
+            prev_close = float(self.buffer["Close"].iloc[-1])
+            pred_close = prev_close * math.exp(pred_ret)
+
+            change_from_base = (pred_close - base_close) / base_close * 100
+
+            results.append({
+                "price":      round(pred_close, 4),
+                "return":     round(pred_ret, 6),
+                "change_pct": round(change_from_base, 4),
+            })
+
+            # Build synthetic bar and append to buffer
+            bar = _make_synthetic_bar(pred_close, self.buffer)
+            self._append_bar(bar)
+
+        return results
+
+
+# ──────────────────────────────────────────────────────────────
 # Data helpers
 # ──────────────────────────────────────────────────────────────
 
@@ -1098,12 +1253,16 @@ def get_prediction(symbol: str, market: str) -> dict:
     predicted_next  = round(latest_close * math.exp(next_day_return), 4)
     change_pct      = round((predicted_next - latest_close) / latest_close * 100, 4)
 
-    # 5-day forecast (iterative, simple version)
-    last_close = latest_close
-    five_day: list[float] = []
-    for _ in range(5):
-        last_close = round(last_close * math.exp(next_day_return * 0.85), 4)
-        five_day.append(last_close)
+    # 5-day autoregressive forecast
+    forecaster = AutoregressiveForecaster(
+        hist_df   = hist,
+        market    = market,
+        stock_idx = stock_idx,
+        symbol    = symbol,
+    )
+    ar_results = forecaster.forecast(5)
+    five_day: list[float] = [r["price"] for r in ar_results]
+    five_day_details: list[dict] = ar_results
 
     # Market cap & volume
     avg_volume = int(hist["Volume"].tail(10).mean())
@@ -1128,6 +1287,7 @@ def get_prediction(symbol: str, market: str) -> dict:
         "actual_prices":    [round(float(v), 4) for v in aligned_close],
         "predicted_prices": [round(float(v), 4) for v in predicted_prices],
         "five_day_forecast": five_day,
+        "five_day_details":  five_day_details,
         "market":           market,
         "currency":         currency,
     }
@@ -1181,8 +1341,8 @@ def get_metrics(symbol: str, market: str) -> dict:
 
         # For India curated metrics: train=851 samples, test=112 samples (from CSV)
         # For US curated metrics: sample sizes not recorded in CSVs
-        train_size = 851 if market == "IN" else None
-        test_size  = 112 if market == "IN" else None
+        train_size = 851 if market == "IN" else 866
+        test_size  = 112 if market == "IN" else 115
         total_samples = (train_size + test_size) if (train_size and test_size) else None
 
         # Build chart arrays — exclude MaxErr since it's not in the curated CSV data
