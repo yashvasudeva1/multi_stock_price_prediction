@@ -155,8 +155,8 @@ Per-stock evaluation metrics are available for several tickers. Example for AAPL
 
 | Split | MAE | RMSE | MAPE | R² | Directional Accuracy |
 |---|---|---|---|---|---|
-| Train | 2.716726 | 3.918751 | 1.292997 | 0.988981 | 52.563510% |
-| Test | 4.148920 | 5.701946 | 1.289340	 | 0.904052 | 50.289855% |
+| Train | 2.1128 | 2.8409 | 1.2451% | 0.9911 | 53.00% |
+| Test | 2.4469 | 3.4620 | 0.9260% | 0.8649 | 51.30% |
 
 Detailed metrics for MSFT, NVDA, AMZN, GOOGL, META, and others are available in `main.py`.
 
