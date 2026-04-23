@@ -1186,6 +1186,7 @@ def _fetch_yf(symbol: str, period: str) -> dict:
     if hist.empty:
         raise ValueError(f"No data for {symbol}")
 
+
     hist.index = hist.index.tz_localize(None)
     return {"hist": hist, "info": {}}
 
@@ -1263,6 +1264,12 @@ def get_prediction(symbol: str, market: str) -> dict:
     ar_results = forecaster.forecast(5)
     five_day: list[float] = [r["price"] for r in ar_results]
     five_day_details: list[dict] = ar_results
+    # 5-day forecast (iterative, simple version)
+    last_close = latest_close
+    five_day: list[float] = []
+    for _ in range(5):
+        last_close = round(last_close * math.exp(next_day_return * 0.85), 4)
+        five_day.append(last_close)
 
     # Market cap & volume
     avg_volume = int(hist["Volume"].tail(10).mean())

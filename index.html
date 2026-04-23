@@ -1175,7 +1175,25 @@
   </div>
 
   <script>
-    const API = "http://localhost:5050/api";
+    let API = "";
+
+    async function resolveApiBase() {
+      const preferred = "http://localhost:5050";
+      const fallback = "http://localhost:8000";
+      const candidates = [preferred, fallback];
+
+      for (const base of candidates) {
+        try {
+          const r = await fetch(`${base}/health`, { method: "GET" });
+          if (r.ok) return `${base}/api`;
+        } catch (_) {
+          // Try next backend candidate.
+        }
+      }
+
+      // Keep UI functional with explicit default while reporting offline backend state.
+      return `${preferred}/api`;
+    }
     let stocks = [];
     let priceChart = null, volChart = null;
     let currentSymbol = null;
@@ -1266,7 +1284,7 @@
 
         // Detect if train data exists (India model has null train)
         const hasTrain = rows.some(row => row.train !== null && row.train !== undefined);
-        const hasDiff  = rows.some(row => row.difference !== null && row.difference !== undefined);
+        const hasDiff = rows.some(row => row.difference !== null && row.difference !== undefined);
 
         const body = rows.map(row => {
           const trainCell = (row.train !== null && row.train !== undefined)
@@ -1488,6 +1506,7 @@
 
     // ── Boot ─────────────────────────────────────────────────
     async function boot() {
+      API = await resolveApiBase();
       await loadStocks();
       buildTickerStrip();
       loadModelInfo();
@@ -1502,6 +1521,8 @@
         renderStockList(stocks);
       } catch (e) {
         console.error("Cannot reach backend:", e);
+        document.getElementById("stock-count").textContent = "0";
+        document.getElementById("stock-list").innerHTML = '<div style="padding:10px;color:var(--muted);font-size:0.75rem">Backend offline. Start API server on port 5050 or 8000.</div>';
       }
     }
 
