@@ -1178,21 +1178,23 @@
     let API = "";
 
     async function resolveApiBase() {
-      const preferred = "http://localhost:5050";
-      const fallback = "http://localhost:8000";
-      const candidates = [preferred, fallback];
+      const PROD_BACKEND = "https://multi-stock-price-prediction.onrender.com";
 
-      for (const base of candidates) {
-        try {
-          const r = await fetch(`${base}/health`, { method: "GET" });
-          if (r.ok) return `${base}/api`;
-        } catch (_) {
-          // Try next backend candidate.
+      // In local development, try localhost candidates first
+      const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+      if (isLocal) {
+        for (const base of ["http://localhost:5050", "http://localhost:8000"]) {
+          try {
+            const r = await fetch(`${base}/health`, { method: "GET" });
+            if (r.ok) return `${base}/api`;
+          } catch (_) {
+            // Try next local candidate.
+          }
         }
       }
 
-      // Keep UI functional with explicit default while reporting offline backend state.
-      return `${preferred}/api`;
+      // Production: always use the deployed Render backend
+      return `${PROD_BACKEND}/api`;
     }
     let stocks = [];
     let priceChart = null, volChart = null;
