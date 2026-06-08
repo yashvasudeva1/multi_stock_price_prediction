@@ -145,22 +145,7 @@ GET /api/predict?symbol=AAPL&days=5
 
 ### Open the Web Interface
 
-Open `index.html` in any modern browser. Basic viewing requires no server; full predictions require the FastAPI backend running.
-
----
-
-## Model Performance
-
-Per-stock evaluation metrics are available for several tickers. Example for AAPL:
-
-| Split | MAE | RMSE | MAPE | R² | Directional Accuracy |
-|---|---|---|---|---|---|
-| Train | 2.1128 | 2.8409 | 1.2451% | 0.9911 | 53.00% |
-| Test | 2.4469 | 3.4620 | 0.9260% | 0.8649 | 51.30% |
-
-Detailed metrics for MSFT, NVDA, AMZN, GOOGL, META, and others are available in `main.py`.
-
----
+Open `index.html` in any modern browser. Basic viewing requires no server; full predictions require the FastAPI backend running
 
 ## Configuration
 
