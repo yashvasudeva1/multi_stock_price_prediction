@@ -1281,6 +1281,11 @@
           <div class="chart-wrap">
             <canvas id="price-chart"></canvas>
             <div class="empty-state" id="price-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              <p id="price-empty-text">Select a stock to show prediction</p>
+              <div class="empty-symbol" id="price-empty-symbol">—</div>
             </div>
           </div>
           <div class="legend-row">
@@ -1562,8 +1567,10 @@
       document.getElementById("info-sym").textContent = "—";
       document.getElementById("chart-title").textContent = "Price Chart";
       document.getElementById("price-empty").style.display = "flex";
-      document.getElementById("price-empty-text").textContent = "Select a stock to show prediction";
-      document.getElementById("price-empty-symbol").textContent = "—";
+      const petEl = document.getElementById("price-empty-text");
+      if (petEl) petEl.textContent = "Select a stock to show prediction";
+      const pesEl = document.getElementById("price-empty-symbol");
+      if (pesEl) pesEl.textContent = "—";
       document.getElementById("forecast-list").innerHTML = '<p style="color:var(--muted);font-size:0.75rem">Select a stock to view forecasts.</p>';
       document.getElementById("sig-rsi").textContent = "—";
       document.getElementById("sig-macd").textContent = "—";
@@ -1916,7 +1923,8 @@
       renderStockList(stocks);
       document.getElementById("info-sym").textContent = symbol;
       document.getElementById("chart-title").textContent = symbol + " — Price History";
-      document.getElementById("price-empty-symbol").textContent = symbol;
+      const peSymEl = document.getElementById("price-empty-symbol");
+      if (peSymEl) peSymEl.textContent = symbol;
 
       showOverlay("Loading prediction for " + symbol + "…");
       await loadPrediction(symbol);
@@ -1991,21 +1999,38 @@
     async function loadPrediction(symbol) {
       try {
         const r = await fetch(`${API}/predict?symbol=${encodeURIComponent(symbol)}&market=${currentMarket}`);
+
+        // Guard against non-200 HTTP responses (e.g. backend 500)
+        if (!r.ok) {
+          const errText = await r.text().catch(() => r.statusText);
+          console.error(`Predict API error ${r.status}:`, errText);
+          document.getElementById("kpi-current").textContent = "Error";
+          document.getElementById("kpi-predicted").textContent = "—";
+          document.getElementById("kpi-name").textContent = "Backend error — try again";
+          return;
+        }
+
         const d = await r.json();
         if (d.error) { console.error(d.error); hideOverlay(); return; }
 
         const cur = d.currency || currencySymbol;
 
-        // KPIs
-        document.getElementById("kpi-name").textContent = d.company_name;
-        document.getElementById("kpi-current").textContent = cur + d.latest_close.toFixed(2);
-        document.getElementById("kpi-predicted").textContent = cur + d.predicted_next.toFixed(2);
+        // KPIs — guard each numeric field with fallback
+        document.getElementById("kpi-name").textContent = d.company_name ?? symbol;
+        document.getElementById("kpi-current").textContent =
+          d.latest_close != null ? cur + Number(d.latest_close).toFixed(2) : "—";
+        document.getElementById("kpi-predicted").textContent =
+          d.predicted_next != null ? cur + Number(d.predicted_next).toFixed(2) : "—";
         document.getElementById("kpi-ipo").textContent = getSymbolIPO(symbol);
         document.getElementById("kpi-pe").textContent = getSymbolSector(symbol);
 
         const pct = d.change_pct;
         const badgeEl = document.getElementById("kpi-badge");
-        badgeEl.innerHTML = `<span class="kpi-badge ${pct >= 0 ? 'badge-up' : 'badge-dn'}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
+        if (badgeEl) {
+          badgeEl.innerHTML = pct != null
+            ? `<span class="kpi-badge ${pct >= 0 ? 'badge-up' : 'badge-dn'}">${pct >= 0 ? '+' : ''}${Number(pct).toFixed(2)}%</span>`
+            : "";
+        }
 
         latestPrediction = { symbol, data: d };
 
@@ -2016,7 +2041,8 @@
         drawForecast(d.five_day_forecast, d.latest_close, d.five_day_details);
 
         // Hide empty state
-        document.getElementById("price-empty").style.display = "none";
+        const peEl = document.getElementById("price-empty");
+        if (peEl) peEl.style.display = "none";
 
         // Load volume
         await loadHistory(symbol, currentPeriod, true);
