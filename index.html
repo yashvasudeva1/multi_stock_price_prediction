@@ -74,6 +74,91 @@
       height: 100vh;
     }
 
+    /* ── Hamburger / Mobile nav ──────────────────────────── */
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 36px;
+      height: 36px;
+      cursor: pointer;
+      gap: 5px;
+      border: none;
+      background: transparent;
+      padding: 4px;
+      border-radius: 6px;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .hamburger:hover {
+      background: var(--card);
+    }
+
+    .hamburger span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--muted);
+      border-radius: 2px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-origin: center;
+    }
+
+    .hamburger.open span:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+
+    .hamburger.open span:nth-child(2) {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+
+    .hamburger.open span:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
+
+    /* ── Sidebar overlay (mobile) ──────────────────────── */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 99;
+      backdrop-filter: blur(2px);
+      animation: fadeIn 0.2s ease;
+    }
+
+    .sidebar-overlay.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    /* ── Sidebar close btn (mobile) ──────────────────── */
+    .sidebar-close {
+      display: none;
+      border: none;
+      background: var(--card);
+      color: var(--muted);
+      font-size: 1.1rem;
+      cursor: pointer;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s;
+    }
+
+    .sidebar-close:hover {
+      color: var(--text);
+    }
+
     /* ── Topbar ────────────────────────────────────────────── */
     .topbar {
       grid-column: 1 / -1;
@@ -876,6 +961,7 @@
       color: var(--green) !important;
     }
 
+    /* ── Tablet (≤ 1100px) ──────────────────────────────── */
     @media (max-width: 1100px) {
       .kpi-row {
         grid-template-columns: repeat(3, 1fr);
@@ -887,6 +973,208 @@
 
       .info-strip {
         grid-template-columns: repeat(2, 1fr);
+      }
+
+      .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    /* ── Tablet portrait (≤ 900px) ──────────────────────── */
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: 56px 1fr;
+      }
+
+      .hamburger {
+        display: flex;
+      }
+
+      .sidebar-close {
+        display: flex;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        width: 280px;
+        height: 100vh;
+        z-index: 100;
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      /* Hide ticker strip to save space on tablet */
+      .topbar-ticker-strip {
+        display: none;
+      }
+
+      .topbar {
+        justify-content: space-between;
+      }
+
+      .topbar-right {
+        gap: 10px;
+      }
+
+      .chart-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      /* The span-2 kpi shouldn't span 2 on small screens */
+      .kpi[style*="grid-column: span 2"] {
+        grid-column: span 1 !important;
+      }
+
+      .main {
+        padding: 16px 16px;
+      }
+
+      .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    /* ── Mobile (≤ 600px) ────────────────────────────────── */
+    @media (max-width: 600px) {
+      html {
+        font-size: 13px;
+      }
+
+      .topbar {
+        padding: 0 14px;
+        gap: 10px;
+      }
+
+      .logo {
+        font-size: 1.2rem;
+      }
+
+      .logo span {
+        display: none;
+      }
+
+      .model-badge {
+        padding: 6px 10px;
+        font-size: 0.65rem;
+      }
+
+      .model-badge span {
+        display: none;
+      }
+
+      .market-toggle-btn {
+        padding: 5px 8px;
+        font-size: 0.65rem;
+      }
+
+      .main {
+        padding: 12px 12px;
+        gap: 14px;
+      }
+
+      .kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .kpi {
+        padding: 12px 14px;
+      }
+
+      .kpi-value {
+        font-size: 1.1rem;
+      }
+
+      .chart-wrap {
+        height: 220px;
+      }
+
+      .chart-panel {
+        padding: 14px 14px;
+      }
+
+      .panel-header {
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .period-tabs {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .period-tab {
+        flex: 1;
+        text-align: center;
+      }
+
+      .model-info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .info-strip {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .metrics-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .legend-row {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .vol-wrap {
+        height: 70px;
+      }
+
+      .metrics-chart-wrap {
+        height: 160px;
+      }
+
+      /* Hide ticker entirely */
+      .topbar-ticker-strip {
+        display: none;
+      }
+    }
+
+    /* ── Very small phones (≤ 380px) ──────────────────────── */
+    @media (max-width: 380px) {
+      .kpi-row {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .info-strip {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .metrics-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .kpi[style*="grid-column: span 2"] {
+        grid-column: span 2 !important;
       }
     }
   </style>
@@ -903,6 +1191,13 @@
 
     <!-- ── Topbar ─────────────────────────────────────────── -->
     <header class="topbar">
+      <!-- Hamburger (mobile only) -->
+      <button class="hamburger" id="hamburger-btn" aria-label="Toggle sidebar" onclick="toggleSidebar()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
       <div class="logo">PRISM <span>/ stock intelligence</span></div>
 
       <div class="topbar-ticker-strip">
@@ -922,17 +1217,22 @@
           </button>
         </div>
         <div class="model-badge" id="model-badge">
-          <div class="dot"></div>
           <span id="model-badge-text">US Model Loaded</span>
         </div>
       </div>
     </header>
 
+    <!-- ── Sidebar overlay (mobile) ──────────────────────── -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
     <!-- ── Sidebar ────────────────────────────────────────── -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span>Watchlist · <span id="stock-count">0</span> stocks</span>
-        <span class="market-label" id="sidebar-market-label">US</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="market-label" id="sidebar-market-label">US</span>
+          <button class="sidebar-close" onclick="closeSidebar()" aria-label="Close sidebar">✕</button>
+        </div>
       </div>
       <input class="search-box" id="search-box" placeholder="Search symbol…" oninput="filterStocks(this.value)" />
       <div class="stock-list" id="stock-list"></div>
@@ -981,11 +1281,6 @@
           <div class="chart-wrap">
             <canvas id="price-chart"></canvas>
             <div class="empty-state" id="price-empty">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-              <p id="price-empty-text">Select a stock to show prediction</p>
-              <div class="empty-symbol" id="price-empty-symbol">—</div>
             </div>
           </div>
           <div class="legend-row">
@@ -1044,7 +1339,7 @@
         </div>
         <div class="info-pill">
           <div class="info-pill-label">Model Status</div>
-          <div class="info-pill-value" id="info-model" style="color:var(--green)">Pre-trained ✓</div>
+          <div class="info-pill-value" id="info-model" style="color:var(--green)">Pre-trained</div>
         </div>
         <div class="info-pill">
           <div class="info-pill-label">Market</div>
@@ -1175,6 +1470,39 @@
   </div>
 
   <script>
+    // ── Mobile Sidebar Toggle ─────────────────────────────────────
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const btn = document.getElementById('hamburger-btn');
+      const isOpen = sidebar.classList.contains('open');
+      if (isOpen) {
+        closeSidebar();
+      } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+        btn.classList.add('open');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+
+    function closeSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const btn = document.getElementById('hamburger-btn');
+      sidebar.classList.remove('open');
+      overlay.classList.remove('active');
+      btn.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    // Close sidebar when a stock is selected on mobile
+    function onStockSelected() {
+      if (window.innerWidth <= 900) {
+        closeSidebar();
+      }
+    }
+
     let API = "";
 
     async function resolveApiBase() {
@@ -1518,7 +1846,11 @@
     async function loadStocks() {
       try {
         const r = await fetch(`${API}/stocks?market=${currentMarket}`);
-        stocks = await r.json();
+        const raw = await r.json();
+        // Deduplicate by symbol in case the API returns duplicates
+        const seen = new Map();
+        raw.forEach(s => { if (!seen.has(s.symbol)) seen.set(s.symbol, s); });
+        stocks = Array.from(seen.values());
         document.getElementById("stock-count").textContent = stocks.length;
         renderStockList(stocks);
       } catch (e) {
@@ -1579,6 +1911,8 @@
       // Unescape HTML entities that might be in the onclick
       symbol = symbol.replace(/&amp;/g, '&');
       currentSymbol = symbol;
+      // Auto-close the sidebar on mobile when a stock is selected
+      onStockSelected();
       renderStockList(stocks);
       document.getElementById("info-sym").textContent = symbol;
       document.getElementById("chart-title").textContent = symbol + " — Price History";
