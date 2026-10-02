@@ -251,14 +251,16 @@ def load_all_predictions() -> pd.DataFrame:
     return df
 
 
-def load_window_data(days: int, market: str | None = None) -> np.ndarray:
-    """Load prediction values for the last N days."""
+def load_window_data(start_days: int, end_days: int = 0, market: str | None = None) -> np.ndarray:
+    """Load prediction values between (now - start_days) and (now - end_days)."""
     if not DB_PATH.exists():
         return np.array([])
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    now = datetime.now(timezone.utc)
+    t_start = (now - timedelta(days=start_days)).isoformat()
+    t_end   = (now - timedelta(days=end_days)).isoformat()
     conn = sqlite3.connect(str(DB_PATH))
-    query = "SELECT predicted_value FROM predictions WHERE timestamp >= ?"
-    params: list = [cutoff]
+    query = "SELECT predicted_value FROM predictions WHERE timestamp >= ? AND timestamp <= ?"
+    params: list = [t_start, t_end]
     if market and market != "ALL":
         query += " AND market = ?"
         params.append(market)
@@ -295,28 +297,64 @@ def compute_ks(reference: np.ndarray, production: np.ndarray) -> tuple[float, fl
     return round(ks_stat, 4), round(float(np.mean(np.abs(cdf_a - cdf_b))), 4)
 
 
-def seed_synthetic_traffic(scenario: str, count: int = 50) -> None:
+def seed_synthetic_traffic(scenario: str, count: int = 40) -> None:
     """Generate sample predictions to test drift behaviors in the UI."""
-    from app.monitoring import store_prediction
+    import uuid
 
-    rng = np.random.default_rng(42)
+    if not DB_PATH.exists():
+        return
+
+    rng = np.random.default_rng()
     symbols = ["AAPL", "NVDA", "MSFT", "GOOGL", "AMZN"]
+    now = datetime.now(timezone.utc)
+    conn = sqlite3.connect(str(DB_PATH))
+    rows = []
 
-    # Reference baseline: ~150 mean, 10 std
+    # 1. Seed historical baseline (stamped 15–25 days ago) ~150 mean, 10 std
+    for i in range(50):
+        sym = rng.choice(symbols)
+        val = float(rng.normal(150.0, 10.0))
+        ts  = (now - timedelta(days=15, hours=i)).isoformat()
+        rows.append((str(uuid.uuid4()), ts, sym, "US", "v1", 1, round(val, 4), None, None, None))
+
+    # 2. Seed recent production regime (stamped in recent 1–2 days)
     for i in range(count):
         sym = rng.choice(symbols)
         if scenario == "Baseline (Normal)":
             val = float(rng.normal(150.0, 10.0))
         elif scenario == "Bull Market Shift (+25%)":
-            val = float(rng.normal(187.5, 12.0))
+            val = float(rng.normal(190.0, 12.0))
         elif scenario == "High Volatility Regime":
-            val = float(rng.normal(150.0, 35.0))
+            val = float(rng.normal(150.0, 45.0))
         elif scenario == "Bear Market Plunge (-30%)":
             val = float(rng.normal(105.0, 8.0))
         else:
             val = float(rng.normal(150.0, 10.0))
 
-        store_prediction(sym, "US", "v1", 1, round(val, 4))
+        ts = (now - timedelta(hours=i)).isoformat()
+        rows.append((str(uuid.uuid4()), ts, sym, "US", "v1", 1, round(val, 4), None, None, None))
+
+    conn.executemany(
+        """
+        INSERT INTO predictions
+            (prediction_id, timestamp, symbol, market, model_version, horizon,
+             predicted_value, actual_value, error, absolute_error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_prediction_database() -> None:
+    """Reset the predictions database."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute("DELETE FROM predictions")
+    conn.commit()
+    conn.close()
 
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
@@ -366,17 +404,34 @@ with st.sidebar:
             "Bear Market Plunge (-30%)",
         ],
     )
-    if st.button("Generate 30 Synthetic Predictions", **RESPONSIVE_WIDTH):
-        seed_synthetic_traffic(sim_scenario, 30)
+    if st.button("Simulate Scenario & Inject Drift", **RESPONSIVE_WIDTH):
+        seed_synthetic_traffic(sim_scenario, 40)
         st.cache_data.clear()
-        st.success(f"Generated 30 '{sim_scenario}' predictions.")
+        st.success(f"Injected '{sim_scenario}' predictions against historical baseline.")
+        st.rerun()
+
+    if st.button("🧹 Reset Predictions DB", **RESPONSIVE_WIDTH):
+        clear_prediction_database()
+        st.cache_data.clear()
+        st.info("Predictions database reset.")
         st.rerun()
 
 # ── Main Content Area ─────────────────────────────────────────────────────────
 
-# Load Windows
-ref_data = load_window_data(ref_days, market=market_filter)
-rec_data = load_window_data(rec_days, market=market_filter)
+# Load Windows:
+# Recent window: last rec_days (from now - rec_days to now)
+rec_data = load_window_data(start_days=rec_days, end_days=0, market=market_filter)
+
+# Baseline window: historical period from (now - ref_days) to (now - rec_days)
+ref_data = load_window_data(start_days=ref_days, end_days=rec_days, market=market_filter)
+
+# Adaptive fallback: if database has fewer than 5 rows older than rec_days (e.g. fresh install today)
+if len(ref_data) < 5:
+    all_vals = load_window_data(start_days=max(ref_days, rec_days), end_days=0, market=market_filter)
+    if len(all_vals) >= 10:
+        split_idx = len(all_vals) // 2
+        ref_data = all_vals[:split_idx]
+        rec_data = all_vals[split_idx:]
 
 # Calculate Core Metrics
 psi_val = compute_psi(ref_data, rec_data)
