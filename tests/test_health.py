@@ -50,3 +50,38 @@ async def test_ready_status_200_or_503(client):
     """Ready must return 200 (models OK) or 503 (not ready) — never 500."""
     response = await client.get("/ready")
     assert response.status_code in (200, 503)
+
+
+@pytest.mark.asyncio
+async def test_api_health_alias(client):
+    """GET /api/health should mirror GET /health."""
+    response = await client.get("/api/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "models_loaded" in data
+
+
+@pytest.mark.asyncio
+async def test_healthz_and_livez(client):
+    """Kubernetes liveness ping endpoints."""
+    for path in ("/healthz", "/livez"):
+        resp = await client.get(path)
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_health_detailed(client):
+    """Diagnostic health check endpoint."""
+    for path in ("/health/detailed", "/api/health/detailed"):
+        resp = await client.get(path)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] in ("ok", "degraded")
+        assert "uptime" in data
+        assert "system" in data
+        assert "models" in data
+        assert "database" in data
+        assert "total_predictions" in data["database"]
+

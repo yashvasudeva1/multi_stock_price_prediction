@@ -415,6 +415,8 @@ def get_metrics(symbol: str, market: str) -> dict:
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
+STARTUP_TIME = time.time()
+
 app = FastAPI(
     title       = "PRISM Stock Intelligence API",
     description = "Multi-Stock LSTM prediction backend — US & India markets",
@@ -448,6 +450,7 @@ def root():
 
 
 @app.get("/health", tags=["ops"])
+@app.get("/api/health", tags=["ops"])
 def health():
     """
     Liveness probe.
@@ -465,6 +468,83 @@ def health():
         "version":       VERSION,
         "timestamp":     datetime.now(timezone.utc).isoformat(),
         "models_loaded": ModelRegistry._instance is not None and ModelRegistry._instance.all_ok,
+    }
+
+
+@app.get("/healthz", tags=["ops"])
+@app.get("/livez", tags=["ops"])
+def healthz():
+    """Lightweight Kubernetes / cloud ping probe."""
+    return {"status": "ok"}
+
+
+@app.get("/health/detailed", tags=["ops"])
+@app.get("/api/health/detailed", tags=["ops"])
+def health_detailed():
+    """
+    Detailed system and diagnostic health check.
+
+    Exposes service uptime, memory usage, database status, and model readiness.
+    """
+    import sqlite3
+    import sys
+    from pathlib import Path
+
+    import psutil
+
+    now_utc = datetime.now(timezone.utc)
+    uptime_sec = int(time.time() - STARTUP_TIME)
+
+    # Process RAM usage
+    memory_mb = 0.0
+    try:
+        proc = psutil.Process(os.getpid())
+        memory_mb = round(proc.memory_info().rss / (1024 * 1024), 2)
+    except Exception:
+        pass
+
+    # Model readiness
+    reg = ModelRegistry._instance
+    us_ok = reg is not None and reg.us_ok
+    in_ok = reg is not None and reg.in_ok
+
+    # Database connectivity & count
+    db_ok = False
+    db_records = 0
+    db_file = Path("monitoring/predictions.db")
+    if db_file.exists():
+        try:
+            conn = sqlite3.connect(str(db_file))
+            row = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()
+            db_records = row[0] if row else 0
+            db_ok = True
+            conn.close()
+        except Exception:
+            db_ok = False
+
+    return {
+        "status": "ok" if (us_ok and in_ok) else "degraded",
+        "service": "multi-stock-price-prediction",
+        "version": VERSION,
+        "timestamp": now_utc.isoformat(),
+        "uptime": {
+            "seconds": uptime_sec,
+            "human": f"{uptime_sec // 3600}h {(uptime_sec % 3600) // 60}m {uptime_sec % 60}s",
+        },
+        "system": {
+            "python_version": sys.version.split()[0],
+            "platform": sys.platform,
+            "memory_usage_mb": memory_mb,
+        },
+        "models": {
+            "ready": us_ok and in_ok,
+            "us_model": "loaded" if us_ok else "unloaded",
+            "india_model": "loaded" if in_ok else "unloaded",
+        },
+        "database": {
+            "connected": db_ok,
+            "total_predictions": db_records,
+        },
     }
 
 
