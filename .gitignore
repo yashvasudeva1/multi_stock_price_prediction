@@ -24,6 +24,10 @@ build/
 .pytest_cache/
 .coverage
 coverage.xml
+
+# Backup weights
+*.backup.pth
+coverage.xml
 htmlcov/
 
 # Linting / type checking

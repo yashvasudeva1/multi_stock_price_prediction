@@ -39,6 +39,13 @@
         "r2_mean": 0.9183,
         "dir_acc_mean": 53.8725
       }
+    },
+    "last_retrained_at": "2026-10-02T18:30:29.787146+00:00",
+    "latest_retraining": {
+      "epochs": 2,
+      "sequences": 663,
+      "initial_loss": 0.001242,
+      "final_loss": 0.000759
     }
   },
   "india_model": {
@@ -81,6 +88,13 @@
         "r2_mean": 0.9464,
         "dir_acc_mean": 53.6022
       }
+    },
+    "last_retrained_at": "2026-10-02T18:30:59.186578+00:00",
+    "latest_retraining": {
+      "epochs": 2,
+      "sequences": 660,
+      "initial_loss": 0.008193,
+      "final_loss": 0.000642
     }
   }
 }
