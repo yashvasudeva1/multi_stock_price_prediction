@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Lint, Test & Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install production dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install development dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run Ruff (lint)
+        run: ruff check .
+
+      - name: Run pytest
+        env:
+          # Mark model files as trusted in CI
+          TRUSTED_MODEL_CHECKPOINT: "true"
+          GIT_COMMIT: ${{ github.sha }}
+          APP_VERSION: "1.0.0"
+        run: pytest --cov=app --cov=main --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Build Docker image
+        run: |
+          docker build -t prism:ci-${{ github.sha }} .
+
+      - name: Smoke test Docker container
+        run: |
+          docker run -d --name prism-test -p 8001:8000 \
+            -e PORT=8000 \
+            -e TRUSTED_MODEL_CHECKPOINT=true \
+            prism:ci-${{ github.sha }}
+          # Wait for startup
+          sleep 15
+          # Test /health endpoint
+          curl -fsS http://localhost:8001/health | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          assert data['status'] == 'ok', f'Unexpected status: {data}'
+          print('✓ /health OK:', data)
+          "
+          docker stop prism-test
+          docker rm prism-test

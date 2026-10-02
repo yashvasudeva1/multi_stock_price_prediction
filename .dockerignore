@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+
+# GitHub Actions
+.github
+
+# Python cache
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & coverage
+tests/
+pytest.ini
+.pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
+
+# Linting
+ruff.toml
+.ruff_cache/
+
+# Development configs
+requirements-dev.txt
+.env
+.env.*
+
+# Local development files
+*.log
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Monitoring scripts (not needed at runtime in Docker)
+monitoring/collect_predictions.py
+monitoring/evaluate_predictions.py
+monitoring/drift_report.py
+scripts/
+
+# Documentation (not needed in container)
+README.md

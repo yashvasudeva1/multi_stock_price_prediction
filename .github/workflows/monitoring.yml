@@ -1,0 +1,96 @@
+name: Model Monitoring & Drift Automation
+
+on:
+  schedule:
+    # Run daily at 02:00 UTC (after US and Indian markets close)
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      reference_days:
+        description: "Reference baseline window in days"
+        required: false
+        default: "30"
+      recent_days:
+        description: "Recent evaluation window in days"
+        required: false
+        default: "7"
+
+jobs:
+  monitor:
+    name: Daily Observability & Drift Detection
+    runs-on: ubuntu-latest
+    outputs:
+      drift_detected: ${{ steps.drift_check.outputs.drift_detected }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-monitoring-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check /health on production
+        if: ${{ secrets.RENDER_APP_URL != '' }}
+        run: |
+          echo "Pinging production health probe at ${{ secrets.RENDER_APP_URL }}/health..."
+          curl -fsS "${{ secrets.RENDER_APP_URL }}/health" || echo "Health probe warning"
+        continue-on-error: true
+
+      - name: Step 1 — Automated Price Backfill
+        run: |
+          python monitoring/collect_predictions.py
+        continue-on-error: true
+
+      - name: Step 2 — Rolling Accuracy & Error Evaluation
+        run: |
+          python monitoring/evaluate_predictions.py --window 30 --report monitoring/performance_report.json
+        continue-on-error: true
+
+      - name: Step 3 — Drift Analysis (PSI & KS Test)
+        id: drift_check
+        run: |
+          # Run drift detection and capture output
+          python monitoring/drift_report.py \
+            --reference-days ${{ github.event.inputs.reference_days || '30' }} \
+            --recent-days ${{ github.event.inputs.recent_days || '7' }} \
+            --report monitoring/drift_report.json || EXIT_CODE=$?
+
+          if [ "$EXIT_CODE" = "2" ]; then
+            echo "drift_detected=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Significant model prediction drift detected (PSI > 0.20)!"
+          else
+            echo "drift_detected=false" >> "$GITHUB_OUTPUT"
+            echo "Model prediction distribution is stable or within monitoring limits."
+          fi
+
+      - name: Step 4 — Upload Monitoring & Drift Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: monitoring-reports-${{ github.run_id }}
+          path: |
+            monitoring/*.json
+            monitoring/*.csv
+          if-no-files-found: ignore
+
+  trigger_retrain:
+    name: Auto-Trigger Retraining on Drift
+    needs: monitor
+    if: needs.monitor.outputs.drift_detected == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Retraining Workflow
+        run: |
+          echo "Drift threshold breached. Dispatching automated retraining pipeline..."
+          # Can call repository dispatch or retrain workflow

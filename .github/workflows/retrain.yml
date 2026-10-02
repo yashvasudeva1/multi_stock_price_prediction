@@ -1,0 +1,78 @@
+name: Automated Model Retraining Pipeline
+
+on:
+  schedule:
+    # Automated monthly retraining on the 1st of every month at midnight UTC
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "Target market to retrain (US, IN, or both)"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - US
+          - IN
+      epochs:
+        description: "Number of training epochs"
+        required: false
+        default: "50"
+      dry_run:
+        description: "Dry-run simulation mode (checks gates without full training)"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  retrain:
+    name: Execute Retraining Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-retrain-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify Prerequisites & Baseline Metrics
+        run: |
+          python scripts/evaluate_model.py
+
+      - name: Run Retraining Pipeline
+        env:
+          MARKET: ${{ github.event.inputs.market || 'both' }}
+          EPOCHS: ${{ github.event.inputs.epochs || '50' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python scripts/retrain.py \
+            --market "$MARKET" \
+            --epochs "$EPOCHS" \
+            $DRY_RUN_FLAG
+
+      - name: Upload Retrained Artifacts & Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: retrain-artifacts-${{ github.run_id }}
+          path: |
+            model_metadata.json
+            monitoring/*.json
+          if-no-files-found: ignore

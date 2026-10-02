@@ -1,0 +1,86 @@
+{
+  "us_model": {
+    "model_name": "multi-stock-lstm-us",
+    "model_version": "v1",
+    "framework": "pytorch",
+    "market": "US",
+    "created_at": "2024-01-01T00:00:00Z",
+    "git_commit": "77ceb17",
+    "num_stocks": 30,
+    "input_features": 26,
+    "sequence_length": 30,
+    "architecture": {
+      "type": "MultiStockLSTM",
+      "hidden_size": 128,
+      "num_layers": 2,
+      "embed_dim": 12,
+      "dropout": 0.35,
+      "n_features": 26
+    },
+    "training_metrics": {
+      "train": {
+        "mae_mean": 2.7991,
+        "rmse_mean": 3.9341,
+        "mape_mean": 1.3476,
+        "r2_mean": 0.9892,
+        "dir_acc_mean": 54.0228
+      },
+      "val": {
+        "mae_mean": 3.5934,
+        "rmse_mean": 4.9886,
+        "mape_mean": 1.1957,
+        "r2_mean": 0.9217,
+        "dir_acc_mean": 53.0981
+      },
+      "test": {
+        "mae_mean": 4.9133,
+        "rmse_mean": 6.5755,
+        "mape_mean": 1.3793,
+        "r2_mean": 0.9183,
+        "dir_acc_mean": 53.8725
+      }
+    }
+  },
+  "india_model": {
+    "model_name": "multi-stock-lstm-india",
+    "model_version": "v1",
+    "framework": "pytorch",
+    "market": "IN",
+    "created_at": "2024-01-01T00:00:00Z",
+    "git_commit": "77ceb17",
+    "num_stocks": 29,
+    "input_features": 33,
+    "sequence_length": 30,
+    "architecture": {
+      "type": "IndiaMultiStockLSTM",
+      "hidden_size": 128,
+      "num_layers": 2,
+      "embed_dim": 12,
+      "dropout": 0.35,
+      "n_features": 33
+    },
+    "training_metrics": {
+      "train": {
+        "mae_mean": 17.7912,
+        "rmse_mean": 24.9588,
+        "mape_mean": 1.0685,
+        "r2_mean": 0.9898,
+        "dir_acc_mean": 53.6529
+      },
+      "val": {
+        "mae_mean": 17.0831,
+        "rmse_mean": 22.6595,
+        "mape_mean": 0.7514,
+        "r2_mean": 0.9062,
+        "dir_acc_mean": 53.8462
+      },
+      "test": {
+        "mae_mean": 25.0456,
+        "rmse_mean": 33.4718,
+        "mape_mean": 1.0613,
+        "r2_mean": 0.9464,
+        "dir_acc_mean": 53.6022
+      }
+    }
+  }
+}

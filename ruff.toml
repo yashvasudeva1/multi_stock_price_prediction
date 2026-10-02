@@ -1,0 +1,24 @@
+target-version = "py312"
+line-length = 110
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+]
+ignore = [
+    "E501",  # line too long
+    "E712",  # comparison to True/False (FastAPI patterns)
+    "F401",  # unused imports in __init__.py files
+]
+
+[lint.isort]
+known-first-party = ["app"]
