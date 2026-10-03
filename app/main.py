@@ -490,14 +490,14 @@ def health_detailed():
     import sys
     from pathlib import Path
 
-    import psutil
-
     now_utc = datetime.now(timezone.utc)
     uptime_sec = int(time.time() - STARTUP_TIME)
 
     # Process RAM usage
     memory_mb = 0.0
     try:
+        import psutil
+
         proc = psutil.Process(os.getpid())
         memory_mb = round(proc.memory_info().rss / (1024 * 1024), 2)
     except Exception:
